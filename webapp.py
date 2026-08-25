@@ -613,127 +613,139 @@ HOME_TEMPLATE = """
   {% if last_update %}<br>🕓 Τελευταία ενημέρωση δεδομένων: <strong>{{ last_update }}</strong>{% endif %}
 </p>
 {% if error %}<div class="error-banner">⚠️ {{ error }}</div>{% endif %}
-<div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
-  <div class="card" style="flex:1 1 380px; margin-bottom:0;">
-    <form method="post">
-      <div class="row">
-        <div class="field">
-          <label for="klados">Κλάδος (ΠΕ)</label>
-          <input list="klados-list" id="klados" name="klados" type="text"
-                 value="{{ form.klados }}" placeholder="π.χ. ΠΕ06" required>
-          {{ klados_datalist|safe }}
+<div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;">
+
+  <!-- Αριστερή, κύρια στήλη: φόρμα -> χάρτες -> αποτέλεσμα -->
+  <div style="flex:2 1 480px; min-width:0;">
+
+    <div class="card">
+      <form method="post">
+        <div class="row">
+          <div class="field">
+            <label for="klados">Κλάδος (ΠΕ)</label>
+            <input list="klados-list" id="klados" name="klados" type="text"
+                   value="{{ form.klados }}" placeholder="π.χ. ΠΕ06" required>
+            {{ klados_datalist|safe }}
+          </div>
+          <div class="field">
+            <label for="region">Τοποθεσία-στόχος</label>
+            <input id="region" name="region" type="text" value="{{ form.region }}"
+                   placeholder="π.χ. Α' ΕΒΡΟΥ" required>
+          </div>
+          <div class="field">
+            <label for="moria">Μόρια</label>
+            <input id="moria" name="moria" type="text" value="{{ form.moria }}"
+                   placeholder="π.χ. 50.8" required>
+          </div>
         </div>
-        <div class="field">
-          <label for="region">Τοποθεσία-στόχος</label>
-          <input id="region" name="region" type="text" value="{{ form.region }}"
-                 placeholder="π.χ. Α' ΕΒΡΟΥ" required>
+        <div class="checkline">
+          <input type="checkbox" id="subcodes" name="subcodes" {{ 'checked' if form.subcodes }}>
+          <label for="subcodes">Να περιλαμβάνει υποκλάδους (π.χ. ΠΕ11.01)</label>
         </div>
-        <div class="field">
-          <label for="moria">Μόρια</label>
-          <input id="moria" name="moria" type="text" value="{{ form.moria }}"
-                 placeholder="π.χ. 50.8" required>
-        </div>
-      </div>
-      <div class="checkline">
-        <input type="checkbox" id="subcodes" name="subcodes" {{ 'checked' if form.subcodes }}>
-        <label for="subcodes">Να περιλαμβάνει υποκλάδους (π.χ. ΠΕ11.01)</label>
-      </div>
-      <button class="run" type="submit">Έλεγχος</button>
-    </form>
-  </div>
-  {% if map_ctx %}
-  <div class="card" style="flex:1 1 380px; margin-bottom:0;">
-    <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:4px;">
-      🗺️ Νομός {{ map_ctx.nomos }} — πρωτεύουσα: {{ map_ctx.capital }}
+        <button class="run" type="submit">Έλεγχος</button>
+      </form>
     </div>
-    <div id="nomos-map" style="height:420px; border-radius:8px; overflow:hidden; border:1px solid var(--line);"></div>
-    <a href="{{ map_ctx.link_url }}" target="_blank" rel="noopener"
-       style="display:inline-block; margin-top:8px; font-size:12px; color:var(--brass);">
-      Άνοιγμα σε μεγαλύτερο χάρτη ↗
-    </a>
-    <script>
-      window.addEventListener("DOMContentLoaded", function () {
-        loadNomosMap("nomos-map", {{ map_ctx.nomos|tojson }}, {{ map_ctx.lat }}, {{ map_ctx.lng }});
-      });
-    </script>
+
+    {% if map_ctx %}
+    <div class="card">
+      <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:4px;">
+        🗺️ Νομός {{ map_ctx.nomos }} — πρωτεύουσα: {{ map_ctx.capital }}
+      </div>
+      <div id="nomos-map" style="height:380px; border-radius:8px; overflow:hidden; border:1px solid var(--line);"></div>
+      <a href="{{ map_ctx.link_url }}" target="_blank" rel="noopener"
+         style="display:inline-block; margin-top:8px; font-size:12px; color:var(--brass);">
+        Άνοιγμα σε μεγαλύτερο χάρτη ↗
+      </a>
+      <script>
+        window.addEventListener("DOMContentLoaded", function () {
+          loadNomosMap("nomos-map", {{ map_ctx.nomos|tojson }}, {{ map_ctx.lat }}, {{ map_ctx.lng }});
+        });
+      </script>
+    </div>
+
+    <div class="card">
+      <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:4px;">
+        🏫 Σχολικές μονάδες κοντά στη «{{ map_ctx.nomos }}» — Πανελλήνιο Σχολικό Δίκτυο (maps.sch.gr)
+      </div>
+      <div class="hint" style="margin-bottom:8px;">
+        Ζούμαρε/μετακίνησε τον χάρτη, ή χρησιμοποίησε την αναζήτηση μέσα του (δήμος / διεύθυνση
+        εκπαίδευσης / τύπος μονάδας) για ακριβέστερα αποτελέσματα.
+      </div>
+      <div style="border-radius:8px; overflow:hidden; border:1px solid var(--line);">
+        <iframe src="{{ map_ctx.sch_url }}" width="100%" height="420" style="border:0; display:block;"
+                scrolling="no" loading="lazy" title="Χάρτης σχολικών μονάδων ΠΣΔ κοντά στη {{ map_ctx.nomos }}"></iframe>
+      </div>
+      <a href="https://maps.sch.gr/main.html" target="_blank" rel="noopener"
+         style="display:inline-block; margin-top:8px; font-size:12px; color:var(--brass);">
+        Άνοιγμα πλήρους χάρτη σε νέα καρτέλα ↗
+      </a>
+    </div>
+    {% endif %}
+
+    {% if verdict %}
+    <div class="verdict-banner {{ 'verdict-ok' if verdict.ok else 'verdict-no' }}">
+      <span style="font-size:22px;">{{ '✅' if verdict.ok else '❌' }}</span> {{ verdict.text }}
+    </div>
+    {% endif %}
+    {% if output %}
+    <div class="slip">
+      <div class="slip-head">
+        <span>Αποτέλεσμα ελέγχου</span>
+        <span style="display:flex; align-items:center; gap:10px;">
+          <button type="button" class="copy-btn" onclick="copyResult(this)">📋 Αντιγραφή</button>
+          <span class="tag">{{ form.klados }}</span>
+        </span>
+      </div>
+      <pre>{{ output }}</pre>
+    </div>
+    {% endif %}
   </div>
-  {% endif %}
+
+  <!-- Δεξιά στήλη: γενικές πληροφορίες -->
+  <div style="flex:1 1 300px; min-width:0;">
+    {% if avg_dates %}
+    <div class="card">
+      <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:10px;">
+        📅 Μέσος όρος ημερομηνιών ανά φάση (βάσει ιστορικού — ενδεικτικό, όχι εγγύηση)
+      </div>
+      <table style="width:100%; border-collapse:collapse; font-size:13.5px;">
+        {% for phase, info in avg_dates.items() %}
+        <tr style="border-bottom:1px solid var(--line);">
+          <td style="padding:7px 0; font-weight:600;">{{ phase }}΄ Φάση</td>
+          <td style="padding:7px 0; text-align:right; color:var(--muted-dark);">
+            {{ info.text }}<br><span style="opacity:.65; font-size:11.5px;">({{ info.years }})</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% endif %}
+    {% if moriodotisi %}
+    <div class="card">
+      <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:12px;">
+        📐 Μοριοδότηση ανά κατηγορία
+      </div>
+      {% for group in moriodotisi %}
+      <div style="font-size:11px; font-weight:700; color:var(--brass); text-transform:uppercase;
+                  letter-spacing:.03em; margin:14px 0 4px;">{{ group.τίτλος }}</div>
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        {% for item in group.κατηγορίες %}
+        <tr>
+          <td style="padding:6px 0 2px;">{{ item.κατηγορία }}</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--line);">
+          <td style="padding:0 0 7px; text-align:right; font-weight:600; color:var(--muted-dark);">
+            {{ item.μόρια }} μόρια <span style="opacity:.65; font-weight:400;">({{ item.μονάδα }})</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
 </div>
-{% if map_ctx %}
-<div class="card">
-  <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:4px;">
-    🏫 Σχολικές μονάδες κοντά στη «{{ map_ctx.nomos }}» — Πανελλήνιο Σχολικό Δίκτυο (maps.sch.gr)
-  </div>
-  <div class="hint" style="margin-bottom:8px;">
-    Ζούμαρε/μετακίνησε τον χάρτη, ή χρησιμοποίησε την αναζήτηση μέσα του (δήμος / διεύθυνση
-    εκπαίδευσης / τύπος μονάδας) για ακριβέστερα αποτελέσματα.
-  </div>
-  <div style="border-radius:8px; overflow:hidden; border:1px solid var(--line);">
-    <iframe src="{{ map_ctx.sch_url }}" width="100%" height="480" style="border:0; display:block;"
-            scrolling="no" loading="lazy" title="Χάρτης σχολικών μονάδων ΠΣΔ κοντά στη {{ map_ctx.nomos }}"></iframe>
-  </div>
-  <a href="https://maps.sch.gr/main.html" target="_blank" rel="noopener"
-     style="display:inline-block; margin-top:8px; font-size:12px; color:var(--brass);">
-    Άνοιγμα πλήρους χάρτη σε νέα καρτέλα ↗
-  </a>
-</div>
-{% endif %}
-<div style="margin-top:22px;"></div>
-{% if avg_dates %}
-<div class="card">
-  <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:10px;">
-    📅 Μέσος όρος ημερομηνιών ανά φάση (βάσει ιστορικού — ενδεικτικό, όχι εγγύηση)
-  </div>
-  <table style="width:100%; border-collapse:collapse; font-size:13.5px;">
-    {% for phase, info in avg_dates.items() %}
-    <tr style="border-bottom:1px solid var(--line);">
-      <td style="padding:7px 0; font-weight:600; width:90px;">{{ phase }}΄ Φάση</td>
-      <td style="padding:7px 0; text-align:right; color:var(--muted-dark);">
-        {{ info.text }} <span style="opacity:.65;">({{ info.years }})</span>
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-</div>
-{% endif %}
-{% if moriodotisi %}
-<div class="card">
-  <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:12px;">
-    📐 Μοριοδότηση ανά κατηγορία
-  </div>
-  {% for group in moriodotisi %}
-  <div style="font-size:11.5px; font-weight:700; color:var(--brass); text-transform:uppercase;
-              letter-spacing:.04em; margin:14px 0 4px;">{{ group.τίτλος }}</div>
-  <table style="width:100%; border-collapse:collapse; font-size:13.5px;">
-    {% for item in group.κατηγορίες %}
-    <tr style="border-bottom:1px solid var(--line);">
-      <td style="padding:7px 0;">{{ item.κατηγορία }}</td>
-      <td style="padding:7px 0; text-align:right; font-weight:600; color:var(--muted-dark); white-space:nowrap;">
-        {{ item.μόρια }} μόρια <span style="opacity:.65; font-weight:400;">({{ item.μονάδα }})</span>
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% endfor %}
-</div>
-{% endif %}
-{% if verdict %}
-<div class="verdict-banner {{ 'verdict-ok' if verdict.ok else 'verdict-no' }}">
-  <span style="font-size:22px;">{{ '✅' if verdict.ok else '❌' }}</span> {{ verdict.text }}
-</div>
-{% endif %}
-{% if output %}
-<div class="slip">
-  <div class="slip-head">
-    <span>Αποτέλεσμα ελέγχου</span>
-    <span style="display:flex; align-items:center; gap:10px;">
-      <button type="button" class="copy-btn" onclick="copyResult(this)">📋 Αντιγραφή</button>
-      <span class="tag">{{ form.klados }}</span>
-    </span>
-  </div>
-  <pre>{{ output }}</pre>
-</div>
-{% endif %}
 """
 
 
