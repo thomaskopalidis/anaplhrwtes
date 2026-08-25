@@ -321,9 +321,44 @@ def cmd_full(args):
             print(f"   ⚠️  {len(mon_res.monimoi_unused)} μόνιμοι δεν αντιστοιχήθηκαν "
                   f"(δες φύλλο ΜΟΝΙΜΟΙ_ΑΤΑΙΡΙΑΣΤΟΙ στο audit)")
 
-    # --- 2β. Αφαίρεση όσων ΗΔΗ προσλήφθηκαν φέτος (φάσεις Α, Β, Γ, Δ… ενός έτους)
+        # Ζητούμενο: αναλυτική λίστα των μονίμων που αφαιρέθηκαν — όνομα, μόρια,
+        # και ΘΕΣΗ (κατάταξη) που θα είχαν στον ΑΡΧΙΚΟ πίνακα του κλάδου (πριν
+        # την αφαίρεση), όχι μόνο το πλήθος. Ταύτιση με βάση όνομα (όχι index),
+        # ώστε να μη σπάει ό,τι κι αν επιστρέφει εσωτερικά η remove_monimoi.
+        if mon_res.n_removed:
+            try:
+                def _name_key3(row):
+                    return (norm_key(str(row.get("ΕΠΩΝΥΜΟ", "") or "")),
+                            norm_key(str(row.get("ΟΝΟΜΑ", "") or "")),
+                            norm_key(str(row.get("ΠΑΤΡΩΝΥΜΟ", "") or "")))
+
+                removed_keys = {_name_key3(r) for _, r in mon_res.removed.iterrows()}
+                ranked_before, _ = rank(df_k)
+                mask = ranked_before.apply(lambda r: _name_key3(r) in removed_keys, axis=1)
+                monimoi_listed = ranked_before[mask]
+                sort_col = MORIA_NUM if MORIA_NUM in monimoi_listed.columns else None
+                if sort_col:
+                    monimoi_listed = monimoi_listed.sort_values(sort_col, ascending=False)
+                show_cols = [c for c in ["ΘΕΣΗ", "ΕΠΩΝΥΜΟ", "ΟΝΟΜΑ", "ΠΑΤΡΩΝΥΜΟ", MORIA_NUM]
+                            if c in monimoi_listed.columns]
+                if show_cols and not monimoi_listed.empty:
+                    print(f"\n🏛️  ΜΟΝΙΜΟΙ ΠΟΥ ΑΦΑΙΡΕΘΗΚΑΝ  (ονόματα, μόρια, θέση στον αρχικό πίνακα):")
+                    disp = monimoi_listed[show_cols].rename(columns={MORIA_NUM: "ΜΟΡΙΑ"})
+                    print("   " + disp.to_string(index=False).replace("\n", "\n   "))
+                    n_unmatched = mon_res.n_removed - len(monimoi_listed)
+                    if n_unmatched > 0:
+                        print(f"   ⚠️  {n_unmatched} αφαιρεθέντες δεν εμφανίζονται εδώ (δεν ταυτίστηκαν"
+                              " ονομαστικά στον αρχικό πίνακα).")
+            except Exception as exc:                                  # noqa: BLE001
+                print(f"   ⚠️  Δεν μπόρεσα να φτιάξω την αναλυτική λίστα μονίμων ({exc}).")
+
+    # --- 2β. Αφαίρεση όσων ΗΔΗ προσλήφθηκαν φέτος (φάσεις Α, Β, Γ, Δ… ενός ή
+    # ΠΕΡΙΣΣΟΤΕΡΩΝ ετών μαζί — π.χ. "2024-2025,2025-2026" για να αφαιρεθούν και
+    # τα δύο έτη ταυτόχρονα).
     phase_res = None
-    if getattr(args, "exclude_year", None):
+    exclude_years = {y.strip() for y in str(getattr(args, "exclude_year", "") or "").split(",") if y.strip()}
+    if exclude_years:
+        exclude_label = ", ".join(sorted(exclude_years))
         fdir = CFG.faseis_dir()
         if not fdir.exists():
             print(f"\n⚠️  Δεν υπάρχει φάκελος φάσεων ({fdir}) — παραλείπεται.")
@@ -336,12 +371,12 @@ def cmd_full(args):
             for f in all_faseis:
                 rel = f.relative_to(fdir)
                 _, y = extract_phase_year(" / ".join(rel.parts))
-                if y == args.exclude_year:
+                if y in exclude_years:
                     year_files.append(f)
             if not year_files:
                 avail = sorted({(extract_phase_year(" / ".join(f.relative_to(fdir).parts))[1] or "?")
                                 for f in all_faseis})
-                print(f"\n⚠️  Δεν βρέθηκαν αρχεία φάσεων για το έτος {args.exclude_year}.")
+                print(f"\n⚠️  Δεν βρέθηκαν αρχεία φάσεων για το/τα έτος/η {exclude_label}.")
                 print(f"   Διαθέσιμα έτη στο faseis: {', '.join(avail)}")
             else:
                 frames = []
@@ -364,7 +399,7 @@ def cmd_full(args):
                         df_work = phase_res.kept
                         pct2 = (100 * phase_res.n_removed / phase_res.n_before
                                if phase_res.n_before else 0)
-                        print(f"\n🚫 ΑΦΑΙΡΕΣΗ ΗΔΗ ΠΡΟΣΛΗΦΘΕΝΤΩΝ  (φάσεις {args.exclude_year}: "
+                        print(f"\n🚫 ΑΦΑΙΡΕΣΗ ΗΔΗ ΠΡΟΣΛΗΦΘΕΝΤΩΝ  (φάσεις {exclude_label}: "
                               f"{', '.join(f.name for f in year_files)})")
                         print(f"   • Εγγραφές στις φάσεις αυτές : {len(df_hired)}")
                         print(f"   • Αφαιρέθηκαν                : {phase_res.n_removed} ({pct2:.1f}%)")
@@ -374,8 +409,8 @@ def cmd_full(args):
                                   "αντιστοιχήθηκαν (πιθανόν άλλος κλάδος/γραφή ονόματος)")
                         hcols = [c for c in ["ΕΠΩΝΥΜΟ", "ΟΝΟΜΑ", "ΠΑΤΡΩΝΥΜΟ", "ΚΛΑΔΟΣ", "ΠΕΡΙΟΧΗ",
                                             "ΜΟΡΙΑ"] + CFG.PROV_COLS if c in df_hired.columns]
-                        hired_out = (OUT / f"ΗΔΗ_ΠΡΟΣΛΗΦΘΕΝΤΕΣ_{tag}_"
-                                    f"{args.exclude_year.replace('-', '_')}.xlsx")
+                        years_tag = "_".join(y.replace("-", "_") for y in sorted(exclude_years))
+                        hired_out = OUT / f"ΗΔΗ_ΠΡΟΣΛΗΦΘΕΝΤΕΣ_{tag}_{years_tag}.xlsx"
                         df_hired[hcols].to_excel(hired_out, index=False)
                         print(f"💾 Πίνακας ήδη προσληφθέντων ({len(df_hired)} άτομα): {hired_out}")
 
