@@ -25,6 +25,7 @@ from __future__ import annotations
 import builtins
 import io
 import threading
+import time
 import traceback
 import webbrowser
 from contextlib import contextmanager, redirect_stdout
@@ -107,9 +108,20 @@ def _run_capture(cmd_func, args_ns) -> str:
 # ---------------------------------------------------------------------------
 # Βοηθητικά: λίστες κλάδων / ετών για τα πεδία επιλογής
 # ---------------------------------------------------------------------------
+# Αυτές οι δύο σαρώνουν όλα τα αρχεία δεδομένων και καλούνται σε ΚΑΘΕ φόρτωση
+# σελίδας (ακόμα κι όταν απλά ανοίγεις μια φόρμα, όχι μόνο όταν τρέχεις κάτι).
+# Μικρό cache 2 λεπτών ώστε να μη σαρώνει ξανά τον δίσκο σε κάθε κλικ —
+# αρκετά σύντομο ώστε να δεις καινούρια αρχεία μέσα σε 2 λεπτά από τότε που
+# τα ανέβασες, αρκετά μεγάλο ώστε να γλιτώνει τις επαναλαμβανόμενες σαρώσεις.
+_CACHE_TTL = 120  # δευτερόλεπτα
+_klados_cache = {"value": None, "ts": 0.0}
+_years_cache = {"value": None, "ts": 0.0}
 
 
 def _available_klados():
+    now = time.monotonic()
+    if _klados_cache["value"] is not None and now - _klados_cache["ts"] < _CACHE_TTL:
+        return _klados_cache["value"]
     try:
         pinakes = core._files_of(core.CFG.pinakes_dir(), "base")
         codes = set()
@@ -125,28 +137,36 @@ def _available_klados():
             rx = core.klados_regex(code, False)
             if any(rx.search(core.norm_code_text(f.stem)) for f in pinakes):
                 real.add(code)
-        return sorted(real)
+        result = sorted(real)
     except Exception:
-        return []
+        result = []
+    _klados_cache["value"], _klados_cache["ts"] = result, now
+    return result
 
 
 def _available_years():
+    now = time.monotonic()
+    if _years_cache["value"] is not None and now - _years_cache["ts"] < _CACHE_TTL:
+        return _years_cache["value"]
     try:
         fdir = core.CFG.faseis_dir()
         if not fdir.exists():
-            return []
-        out_dir = core.CFG.DATA_DIR / core.CFG.OUTPUT_SUBDIR
-        files = [f for f in sorted(fdir.rglob("*"))
-                 if f.suffix.lower() in DATA_SUFFIXES and not is_own_output(f, out_dir)]
-        years = set()
-        for f in files:
-            rel = f.relative_to(fdir)
-            _, y = core.extract_phase_year(" / ".join(rel.parts))
-            if y:
-                years.add(y)
-        return sorted(years)
+            result = []
+        else:
+            out_dir = core.CFG.DATA_DIR / core.CFG.OUTPUT_SUBDIR
+            files = [f for f in sorted(fdir.rglob("*"))
+                     if f.suffix.lower() in DATA_SUFFIXES and not is_own_output(f, out_dir)]
+            years = set()
+            for f in files:
+                rel = f.relative_to(fdir)
+                _, y = core.extract_phase_year(" / ".join(rel.parts))
+                if y:
+                    years.add(y)
+            result = sorted(years)
     except Exception:
-        return []
+        result = []
+    _years_cache["value"], _years_cache["ts"] = result, now
+    return result
 
 
 _ACADEMIC_MONTH_ORDER = {9: 0, 10: 1, 11: 2, 12: 3, 1: 4, 2: 5, 3: 6,
@@ -760,6 +780,15 @@ def download_file(filename):
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Ελαφριά διαδρομή για keep-alive ping (π.χ. UptimeRobot) — απαντάει αμέσως,
+# χωρίς να αγγίζει καθόλου τα αρχεία δεδομένων. Καλύτερη επιλογή για ping από
+# την αρχική σελίδα.
+@app.route("/healthz")
+def healthz():
+    return "OK", 200
+
+
 def _open_browser():
     webbrowser.open("http://127.0.0.1:5000/")
 
