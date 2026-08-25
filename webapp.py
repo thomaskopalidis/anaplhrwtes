@@ -364,7 +364,7 @@ SHELL_TEMPLATE = """<!doctype html>
     border-top: 1px solid rgba(255,255,255,.1); word-break: break-word;
   }
   .sidebar-footer a { color: var(--brass); }
-  main { flex: 1; padding: 36px 44px; max-width: 980px; }
+  main { flex: 1; padding: 36px 44px; max-width: 1180px; }
   h1.page-title {
     font-family: Georgia,"Iowan Old Style","Times New Roman",serif;
     font-size: 27px; margin: 0 0 6px;
@@ -543,9 +543,11 @@ SHELL_TEMPLATE = """<!doctype html>
     // διατάξεις), το ξαναϋπολογίζει μετά από μια στιγμή.
     setTimeout(function () { map.invalidateSize(); }, 200);
 
-    function fallbackMarker() {
-      L.marker([fallbackLat, fallbackLng]).addTo(map);
-    }
+    // Μπλε κουκκίδα πάνω στην πρωτεύουσα — πάντα ορατή, είτε βρεθεί περίγραμμα
+    // νομού είτε όχι.
+    L.circleMarker([fallbackLat, fallbackLng], {
+      radius: 7, color: "#1D4ED8", weight: 2, fillColor: "#3B82F6", fillOpacity: 0.9,
+    }).addTo(map).bindTooltip("Πρωτεύουσα νομού", { direction: "top" });
 
     // Δοκιμάζουμε πολλές διατυπώσεις με τη σειρά, γιατί το OpenStreetMap δεν
     // ονομάζει πάντα τους νομούς με τον ίδιο τρόπο (παλιά "Νομός Χ" έναντι
@@ -560,8 +562,7 @@ SHELL_TEMPLATE = """<!doctype html>
 
     function tryAttempt(i) {
       if (i >= attempts.length) {
-        fallbackMarker();
-        return;
+        return;  // η κουκκίδα υπάρχει ήδη — απλά δεν βρέθηκε περίγραμμα να χρωματίσουμε
       }
       var url = "https://nominatim.openstreetmap.org/search?format=json&polygon_geojson=1"
         + "&limit=1&countrycodes=gr&q=" + encodeURIComponent(attempts[i]);
@@ -616,7 +617,7 @@ HOME_TEMPLATE = """
 <div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;">
 
   <!-- Αριστερή, κύρια στήλη: φόρμα -> χάρτες -> αποτέλεσμα -->
-  <div style="flex:2 1 480px; min-width:0;">
+  <div style="flex:1 1 500px; min-width:0;">
 
     <div class="card">
       <form method="post">
@@ -702,7 +703,7 @@ HOME_TEMPLATE = """
   </div>
 
   <!-- Δεξιά στήλη: γενικές πληροφορίες -->
-  <div style="flex:1 1 300px; min-width:0;">
+  <div style="flex:1 1 420px; min-width:0;">
     {% if avg_dates %}
     <div class="card">
       <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:10px;">
@@ -713,7 +714,7 @@ HOME_TEMPLATE = """
         <tr style="border-bottom:1px solid var(--line);">
           <td style="padding:7px 0; font-weight:600;">{{ phase }}΄ Φάση</td>
           <td style="padding:7px 0; text-align:right; color:var(--muted-dark);">
-            {{ info.text }}<br><span style="opacity:.65; font-size:11.5px;">({{ info.years }})</span>
+            {{ info.text }} <span style="opacity:.65; font-size:11.5px;">({{ info.years }})</span>
           </td>
         </tr>
         {% endfor %}
