@@ -179,6 +179,21 @@ def _available_years():
 _last_update_cache = {"value": None, "ts": 0.0}
 
 
+def _recent_years_only(years, cutoff=None):
+    """Κρατάει μόνο σχολικά έτη που ξεκινούν από το cutoff και μετά (π.χ.
+    '2025-2026' με cutoff=2025 περνάει, '2024-2025' όχι). Ίδιο cutoff με το
+    main.py, ώστε η Πλήρης Ανάλυση να δείχνει τα ίδια έτη με τη Γρήγορη."""
+    cutoff = cutoff if cutoff is not None else getattr(core, "MIN_RELEVANT_SCHOOL_YEAR", 2025)
+
+    def start(y):
+        try:
+            return int(str(y).split("-")[0])
+        except (ValueError, IndexError):
+            return 0
+
+    return [y for y in years if start(y) >= cutoff]
+
+
 def _last_data_update() -> "str | None":
     """Πιο πρόσφατη ημερομηνία τροποποίησης ανάμεσα στα αρχεία πινάκων/μονίμων/
     φάσεων, μορφοποιημένη στα ελληνικά (π.χ. '25 Αυγούστου 2026'). None αν δεν
@@ -289,13 +304,28 @@ SHELL_TEMPLATE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }} · Πίνακες Αναπληρωτών</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%8B%3C/text%3E%3C/svg%3E">
 <style>
   :root {
     --ink: #16233B; --paper: #EEF2F6; --card: #FFFFFF;
     --brass: #B98A3D; --brass-dark: #8F6A2C; --line: #D7DEE6;
-    --danger: #B23A3A; --radius: 10px;
+    --danger: #B23A3A; --radius: 10px; --muted: var(--muted); --muted-dark: var(--muted-dark);
+    --input-bg: #FBFCFE;
   }
+  [data-theme="dark"] {
+    --ink: #E4E9F1; --paper: #10151D; --card: #182029;
+    --brass: #D6A75C; --brass-dark: #E7BC7B; --line: #2B3542;
+    --danger: #E4837E; --muted: #8B96A6; --muted-dark: #B7C0CD;
+    --input-bg: #131A22;
+  }
+  [data-theme="dark"] .verdict-ok { background: #163524; border-color: #2C6644; color: #7FDB9F; }
+  [data-theme="dark"] .verdict-no { background: #3A1D1D; border-color: #6B3232; color: #F0A6A2; }
+  [data-theme="dark"] .error-banner { background: #3A1D1D; border-color: #6B3232; }
+  [data-theme="dark"] .slip pre { color: #DCE3ED; }
+  [data-theme="dark"] .slip .slip-head .tag { background: var(--brass); color: #10151D; }
+  [data-theme="dark"] nav.sidebar { background: #0A0E13; }
   * { box-sizing: border-box; }
+  html { transition: background .2s; }
   body {
     margin: 0; background: var(--paper); color: var(--ink);
     font-family: -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -335,21 +365,21 @@ SHELL_TEMPLATE = """<!doctype html>
     font-family: Georgia,"Iowan Old Style","Times New Roman",serif;
     font-size: 27px; margin: 0 0 6px;
   }
-  p.page-sub { color: #55617A; margin: 0 0 26px; font-size: 14px; }
+  p.page-sub { color: var(--muted-dark); margin: 0 0 26px; font-size: 14px; }
   .card {
     background: var(--card); border: 1px solid var(--line);
     border-radius: var(--radius); padding: 24px 26px; margin-bottom: 22px;
   }
   .field { margin-bottom: 16px; }
-  .field label { display: block; font-size: 12.5px; font-weight: 600; color: #3C4A63; margin-bottom: 6px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted-dark); margin-bottom: 6px; }
   .field input[type=text], .field input[type=number], .field select {
     width: 100%; max-width: 340px; padding: 9px 11px; border: 1px solid var(--line);
-    border-radius: 6px; font-size: 14px; background: #FBFCFE; color: var(--ink);
+    border-radius: 6px; font-size: 14px; background: var(--input-bg); color: var(--ink);
   }
   .field input:focus, .field select:focus {
     outline: 2px solid var(--brass); outline-offset: 1px; border-color: var(--brass);
   }
-  .field .hint { font-size: 11.5px; color: #7C879A; margin-top: 4px; }
+  .field .hint { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
   .checkline { display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin-bottom: 16px; }
   .checkline label { margin: 0; font-weight: 500; color: var(--ink); }
   .row { display: flex; gap: 24px; flex-wrap: wrap; }
@@ -366,7 +396,7 @@ SHELL_TEMPLATE = """<!doctype html>
   }
   .slip .slip-head {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 13px 22px 12px; border-bottom: 1px dashed var(--line); font-size: 13px; color: #55617A;
+    padding: 13px 22px 12px; border-bottom: 1px dashed var(--line); font-size: 13px; color: var(--muted-dark);
   }
   .slip .slip-head .tag {
     font-family: Consolas,"Cascadia Code",ui-monospace,monospace; font-size: 12px;
@@ -384,9 +414,37 @@ SHELL_TEMPLATE = """<!doctype html>
     padding: 12px 16px; border-radius: 8px; font-size: 13.5px; margin-bottom: 18px;
   }
   .meta-note {
-    font-size: 12.5px; color: #7C879A; margin: -12px 0 22px; line-height: 1.6;
+    font-size: 12.5px; color: var(--muted); margin: -12px 0 22px; line-height: 1.6;
   }
-  .meta-note strong { color: #55617A; font-weight: 600; }
+  .meta-note strong { color: var(--muted-dark); font-weight: 600; }
+  .verdict-banner {
+    padding: 18px 22px; border-radius: var(--radius); margin-bottom: 16px;
+    font-size: 16.5px; font-weight: 700; display: flex; align-items: center; gap: 12px;
+  }
+  .verdict-ok { background: #E7F5EC; border: 1px solid #B7DDC3; color: #1F6B3A; }
+  .verdict-no { background: #FBEBEA; border: 1px solid #E7B8B4; color: #B23A3A; }
+  .copy-btn {
+    background: none; border: 1px solid var(--line); color: var(--muted-dark);
+    padding: 4px 10px; border-radius: 5px; font-size: 12px; cursor: pointer;
+    transition: background .15s, color .15s, border-color .15s; white-space: nowrap;
+  }
+  .copy-btn:hover { background: var(--brass); color: #fff; border-color: var(--brass); }
+  .copy-btn.copied { background: #2F7A4F; color: #fff; border-color: #2F7A4F; }
+  .theme-toggle-btn {
+    margin: 10px 24px 0; padding: 8px 12px; background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.15); color: #C9D2DE; border-radius: 6px;
+    font-size: 12.5px; cursor: pointer; text-align: left; transition: background .15s;
+  }
+  .theme-toggle-btn:hover { background: rgba(255,255,255,.12); }
+  button.run:disabled { opacity: .75; cursor: default; }
+  .loading-dots span {
+    display: inline-block; opacity: 0; animation: loadingBlink 1.2s infinite;
+  }
+  .loading-dots span:nth-child(2) { animation-delay: .2s; }
+  .loading-dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes loadingBlink {
+    0%, 80%, 100% { opacity: 0; } 40% { opacity: 1; }
+  }
   @media (max-width: 720px) {
     .shell { flex-direction: column; }
     nav.sidebar { width: 100%; flex-direction: row; overflow-x: auto; padding: 10px 0; }
@@ -407,6 +465,7 @@ SHELL_TEMPLATE = """<!doctype html>
     <a href="{{ url_for('phase') }}" class="{{ 'active' if active=='phase' else '' }}">🧭 Βάση φάσης</a>
     <a href="{{ url_for('upgrades') }}" class="{{ 'active' if active=='upgrades' else '' }}">🚀 Αναβαθμίσεις</a>
     <a href="{{ url_for('downloads') }}" class="{{ 'active' if active=='downloads' else '' }}">📥 Αρχεία αποτελεσμάτων</a>
+    <button type="button" id="theme-toggle" class="theme-toggle-btn">🌙 Σκοτεινό θέμα</button>
     <div class="sidebar-footer">📁 {{ data_dir }}</div>
   </nav>
   <main>
@@ -415,6 +474,57 @@ SHELL_TEMPLATE = """<!doctype html>
     {{ body|safe }}
   </main>
 </div>
+<script>
+  // --- Σκοτεινό θέμα, με απομνημόνευση επιλογής ---
+  (function () {
+    var saved = localStorage.getItem("theme");
+    if (saved === "dark") document.documentElement.setAttribute("data-theme", "dark");
+    var btn = document.getElementById("theme-toggle");
+    function updateLabel() {
+      var isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      btn.textContent = isDark ? "☀️ Φωτεινό θέμα" : "🌙 Σκοτεινό θέμα";
+    }
+    updateLabel();
+    btn.addEventListener("click", function () {
+      var isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      if (isDark) {
+        document.documentElement.removeAttribute("data-theme");
+        localStorage.setItem("theme", "light");
+      } else {
+        document.documentElement.setAttribute("data-theme", "dark");
+        localStorage.setItem("theme", "dark");
+      }
+      updateLabel();
+    });
+  })();
+
+  // --- Ζωντανή ένδειξη φόρτωσης στο κουμπί, όσο περιμένουμε απάντηση ---
+  document.querySelectorAll("form").forEach(function (f) {
+    f.addEventListener("submit", function () {
+      var btn = f.querySelector("button.run");
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = 'Επεξεργασία<span class="loading-dots"><span>.</span><span>.</span><span>.</span></span>';
+      }
+    });
+  });
+
+  // --- Αντιγραφή αποτελέσματος στο πρόχειρο ---
+  function copyResult(btn) {
+    var slip = btn.closest(".slip");
+    var pre = slip ? slip.querySelector("pre") : null;
+    if (!pre) return;
+    navigator.clipboard.writeText(pre.innerText).then(function () {
+      var original = btn.textContent;
+      btn.textContent = "✓ Αντιγράφηκε";
+      btn.classList.add("copied");
+      setTimeout(function () {
+        btn.textContent = original;
+        btn.classList.remove("copied");
+      }, 1500);
+    });
+  }
+</script>
 </body>
 </html>"""
 
@@ -470,14 +580,14 @@ HOME_TEMPLATE = """
 </div>
 {% if avg_dates %}
 <div class="card">
-  <div style="font-size:12.5px; font-weight:600; color:#3C4A63; margin-bottom:10px;">
+  <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:10px;">
     📅 Μέσος όρος ημερομηνιών ανά φάση (βάσει ιστορικού — ενδεικτικό, όχι εγγύηση)
   </div>
   <table style="width:100%; border-collapse:collapse; font-size:13.5px;">
     {% for phase, info in avg_dates.items() %}
     <tr style="border-bottom:1px solid var(--line);">
       <td style="padding:7px 0; font-weight:600; width:90px;">{{ phase }}΄ Φάση</td>
-      <td style="padding:7px 0; text-align:right; color:#55617A;">
+      <td style="padding:7px 0; text-align:right; color:var(--muted-dark);">
         {{ info.text }} <span style="opacity:.65;">({{ info.years }})</span>
       </td>
     </tr>
@@ -487,7 +597,7 @@ HOME_TEMPLATE = """
 {% endif %}
 {% if moriodotisi %}
 <div class="card">
-  <div style="font-size:12.5px; font-weight:600; color:#3C4A63; margin-bottom:12px;">
+  <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:12px;">
     📐 Μοριοδότηση ανά κατηγορία
   </div>
   {% for group in moriodotisi %}
@@ -497,7 +607,7 @@ HOME_TEMPLATE = """
     {% for item in group.κατηγορίες %}
     <tr style="border-bottom:1px solid var(--line);">
       <td style="padding:7px 0;">{{ item.κατηγορία }}</td>
-      <td style="padding:7px 0; text-align:right; font-weight:600; color:#55617A; white-space:nowrap;">
+      <td style="padding:7px 0; text-align:right; font-weight:600; color:var(--muted-dark); white-space:nowrap;">
         {{ item.μόρια }} μόρια <span style="opacity:.65; font-weight:400;">({{ item.μονάδα }})</span>
       </td>
     </tr>
@@ -506,13 +616,37 @@ HOME_TEMPLATE = """
   {% endfor %}
 </div>
 {% endif %}
+{% if verdict %}
+<div class="verdict-banner {{ 'verdict-ok' if verdict.ok else 'verdict-no' }}">
+  <span style="font-size:22px;">{{ '✅' if verdict.ok else '❌' }}</span> {{ verdict.text }}
+</div>
+{% endif %}
 {% if output %}
 <div class="slip">
-  <div class="slip-head"><span>Αποτέλεσμα ελέγχου</span><span class="tag">{{ form.klados }}</span></div>
+  <div class="slip-head">
+    <span>Αποτέλεσμα ελέγχου</span>
+    <span style="display:flex; align-items:center; gap:10px;">
+      <button type="button" class="copy-btn" onclick="copyResult(this)">📋 Αντιγραφή</button>
+      <span class="tag">{{ form.klados }}</span>
+    </span>
+  </div>
   <pre>{{ output }}</pre>
 </div>
 {% endif %}
 """
+
+
+def _extract_verdict(output_text: str):
+    """Απλή ανίχνευση θετικής/αρνητικής έκβασης μέσα στο κείμενο του predict,
+    για το έγχρωμο πλαίσιο πάνω από το τεχνικό output. None αν δεν βρέθηκε
+    καθαρή ένδειξη (π.χ. σφάλμα, ή δεν βρέθηκαν καθόλου δεδομένα)."""
+    if not output_text:
+        return None
+    if "✅ ΘΑ ΕΜΠΑΙΝΕΣ" in output_text:
+        return {"ok": True, "text": "Θα έμπαινες, με βάση τα διαθέσιμα ιστορικά στοιχεία."}
+    if "❌" in output_text:
+        return {"ok": False, "text": "Δεν θα έμπαινες ακόμα, με βάση τα διαθέσιμα ιστορικά στοιχεία."}
+    return None
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -538,6 +672,7 @@ def home():
     return render_page(
         "home", "Γρήγορος έλεγχος", "Δώσε κλάδο, τοποθεσία-στόχο και τα μόριά σου — θα δεις πού θα έμπαινες φέτος.",
         HOME_TEMPLATE, form=form, output=output, error=error,
+        verdict=_extract_verdict(output),
         klados_datalist=_klados_datalist("klados-list", _available_klados()),
         avg_dates=_average_phase_dates(),
         last_update=_last_data_update(),
@@ -567,7 +702,13 @@ SUMMARY_TEMPLATE = """
 </div>
 {% if output %}
 <div class="slip">
-  <div class="slip-head"><span>Σύνοψη κλάδου</span><span class="tag">{{ form.klados }}</span></div>
+  <div class="slip-head">
+    <span>Σύνοψη κλάδου</span>
+    <span style="display:flex; align-items:center; gap:10px;">
+      <button type="button" class="copy-btn" onclick="copyResult(this)">📋 Αντιγραφή</button>
+      <span class="tag">{{ form.klados }}</span>
+    </span>
+  </div>
   <pre>{{ output }}</pre>
 </div>
 {% endif %}
@@ -646,7 +787,13 @@ FULL_TEMPLATE = """
 </div>
 {% if output %}
 <div class="slip">
-  <div class="slip-head"><span>Πλήρης ανάλυση</span><span class="tag">{{ form.klados }}</span></div>
+  <div class="slip-head">
+    <span>Πλήρης ανάλυση</span>
+    <span style="display:flex; align-items:center; gap:10px;">
+      <button type="button" class="copy-btn" onclick="copyResult(this)">📋 Αντιγραφή</button>
+      <span class="tag">{{ form.klados }}</span>
+    </span>
+  </div>
   <pre>{{ output }}</pre>
 </div>
 {% endif %}
@@ -686,7 +833,7 @@ def full():
         "Κλάδος, αφαίρεση μονίμων, περιοχή διορισμού και αποθήκευση αρχείου επαλήθευσης.",
         FULL_TEMPLATE, form=form, output=output, error=error,
         klados_datalist=_klados_datalist("klados-list", _available_klados()),
-        year_options=_available_years(),
+        year_options=_recent_years_only(_available_years()),
     )
 
 
@@ -727,7 +874,13 @@ PHASE_TEMPLATE = """
 </div>
 {% if output %}
 <div class="slip">
-  <div class="slip-head"><span>Βάση φάσης</span><span class="tag">{{ form.klados }}</span></div>
+  <div class="slip-head">
+    <span>Βάση φάσης</span>
+    <span style="display:flex; align-items:center; gap:10px;">
+      <button type="button" class="copy-btn" onclick="copyResult(this)">📋 Αντιγραφή</button>
+      <span class="tag">{{ form.klados }}</span>
+    </span>
+  </div>
   <pre>{{ output }}</pre>
 </div>
 {% endif %}
@@ -794,7 +947,13 @@ UPGRADES_TEMPLATE = """
 </div>
 {% if output %}
 <div class="slip">
-  <div class="slip-head"><span>Μειωμένο → Πλήρες</span><span class="tag">{{ form.klados }}</span></div>
+  <div class="slip-head">
+    <span>Μειωμένο → Πλήρες</span>
+    <span style="display:flex; align-items:center; gap:10px;">
+      <button type="button" class="copy-btn" onclick="copyResult(this)">📋 Αντιγραφή</button>
+      <span class="tag">{{ form.klados }}</span>
+    </span>
+  </div>
   <pre>{{ output }}</pre>
 </div>
 {% endif %}
@@ -842,7 +1001,7 @@ DOWNLOADS_TEMPLATE = """
     {% endfor %}
   </ul>
 {% else %}
-  <p style="margin:0; color:#7C879A;">Δεν έχουν δημιουργηθεί ακόμα αρχεία. Τρέξε μια Πλήρη Ανάλυση, Βάση
+  <p style="margin:0; color:var(--muted);">Δεν έχουν δημιουργηθεί ακόμα αρχεία. Τρέξε μια Πλήρη Ανάλυση, Βάση
      Φάσης ή Αναβαθμίσεις — τα Excel που παράγουν θα εμφανιστούν εδώ.</p>
 {% endif %}
 </div>
