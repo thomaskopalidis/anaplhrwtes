@@ -535,9 +535,13 @@ SHELL_TEMPLATE = """<!doctype html>
   // δεν αφήνει τον χάρτη άδειο/σπασμένο.
   function loadNomosMap(elId, query, fallbackLat, fallbackLng) {
     var map = L.map(elId, { scrollWheelZoom: false }).setView([fallbackLat, fallbackLng], 9);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "© OpenStreetMap contributors", maxZoom: 18,
     }).addTo(map);
+    // Ασφάλεια: αν το layout της σελίδας δεν είχε ακόμα σταθεροποιηθεί πλήρως
+    // τη στιγμή της αρχικοποίησης (γνωστό ζήτημα του Leaflet σε flex/grid
+    // διατάξεις), το ξαναϋπολογίζει μετά από μια στιγμή.
+    setTimeout(function () { map.invalidateSize(); }, 200);
 
     function fallbackMarker() {
       L.marker([fallbackLat, fallbackLng]).addTo(map);
@@ -592,7 +596,7 @@ HOME_TEMPLATE = """
   {% if last_update %}<br>🕓 Τελευταία ενημέρωση δεδομένων: <strong>{{ last_update }}</strong>{% endif %}
 </p>
 {% if error %}<div class="error-banner">⚠️ {{ error }}</div>{% endif %}
-<div style="display:flex; gap:20px; flex-wrap:wrap; align-items:stretch;">
+<div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
   <div class="card" style="flex:1 1 380px; margin-bottom:0;">
     <form method="post">
       <div class="row">
@@ -625,13 +629,15 @@ HOME_TEMPLATE = """
     <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:4px;">
       🗺️ Νομός {{ map_ctx.nomos }} — πρωτεύουσα: {{ map_ctx.capital }}
     </div>
-    <div id="nomos-map" style="height:266px; border-radius:8px; overflow:hidden; border:1px solid var(--line);"></div>
+    <div id="nomos-map" style="height:420px; border-radius:8px; overflow:hidden; border:1px solid var(--line);"></div>
     <a href="{{ map_ctx.link_url }}" target="_blank" rel="noopener"
        style="display:inline-block; margin-top:8px; font-size:12px; color:var(--brass);">
       Άνοιγμα σε μεγαλύτερο χάρτη ↗
     </a>
     <script>
-      loadNomosMap("nomos-map", {{ map_ctx.query|tojson }}, {{ map_ctx.lat }}, {{ map_ctx.lng }});
+      window.addEventListener("DOMContentLoaded", function () {
+        loadNomosMap("nomos-map", {{ map_ctx.query|tojson }}, {{ map_ctx.lat }}, {{ map_ctx.lng }});
+      });
     </script>
   </div>
   {% endif %}
@@ -639,19 +645,19 @@ HOME_TEMPLATE = """
 {% if map_ctx %}
 <div class="card">
   <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:4px;">
-    🏫 Σχολικές μονάδες — Πανελλήνιο Σχολικό Δίκτυο (maps.sch.gr)
+    🏫 Σχολικές μονάδες κοντά στη «{{ map_ctx.nomos }}» — Πανελλήνιο Σχολικό Δίκτυο (maps.sch.gr)
   </div>
   <div class="hint" style="margin-bottom:8px;">
-    Χρησιμοποίησε την αναζήτηση μέσα στον χάρτη (δήμος / διεύθυνση εκπαίδευσης / τύπος μονάδας) για
-    να δεις σχολεία στη «{{ map_ctx.nomos }}».
+    Ζούμαρε/μετακίνησε τον χάρτη, ή χρησιμοποίησε την αναζήτηση μέσα του (δήμος / διεύθυνση
+    εκπαίδευσης / τύπος μονάδας) για ακριβέστερα αποτελέσματα.
   </div>
   <div style="border-radius:8px; overflow:hidden; border:1px solid var(--line);">
-    <iframe src="https://maps.sch.gr/main.html" style="width:100%; height:480px; border:0; display:block;"
-            loading="lazy" title="Χάρτης σχολικών μονάδων ΠΣΔ"></iframe>
+    <iframe src="{{ map_ctx.sch_url }}" width="100%" height="480" style="border:0; display:block;"
+            scrolling="no" loading="lazy" title="Χάρτης σχολικών μονάδων ΠΣΔ κοντά στη {{ map_ctx.nomos }}"></iframe>
   </div>
   <a href="https://maps.sch.gr/main.html" target="_blank" rel="noopener"
      style="display:inline-block; margin-top:8px; font-size:12px; color:var(--brass);">
-    Άνοιγμα σε νέα καρτέλα ↗
+    Άνοιγμα πλήρους χάρτη σε νέα καρτέλα ↗
   </a>
 </div>
 {% endif %}
@@ -824,6 +830,10 @@ def _osm_link(lat: float, lng: float) -> str:
     return f"https://www.openstreetmap.org/?mlat={lat}&mlon={lng}#map=9/{lat}/{lng}"
 
 
+def _sch_embed_url(lat: float, lng: float, zoom: int = 9) -> str:
+    return f"https://maps.sch.gr/embed.html?zoom={zoom}&lat={lat}&lng={lng}"
+
+
 def _extract_verdict(output_text: str):
     """Απλή ανίχνευση θετικής/αρνητικής έκβασης μέσα στο κείμενο του predict,
     για το έγχρωμο πλαίσιο πάνω από το τεχνικό output. None αν δεν βρέθηκε
@@ -866,6 +876,7 @@ def home():
             "query": f"Νομός {nomos_name.capitalize()}, Ελλάδα",
             "lat": nomos_info["lat"], "lng": nomos_info["lng"],
             "link_url": _osm_link(nomos_info["lat"], nomos_info["lng"]),
+            "sch_url": _sch_embed_url(nomos_info["lat"], nomos_info["lng"]),
         }
 
     return render_page(
