@@ -1,0 +1,61 @@
+
+----- 2026-08-13 08:36:37 -----
+Εντολή: main.py full --klados ΠΕ04.01 --region Α'ΚΑΒΑΛΑΣ
+Traceback (most recent call last):
+  File "C:\Users\thoma\Teachers\main.py", line 466, in <module>
+    sys.exit(_run())
+  File "C:\Users\thoma\Teachers\main.py", line 459, in _run
+    return args.func(args)
+  File "C:\Users\thoma\Teachers\main.py", line 324, in cmd_full
+    audit_out = write_audit(OUT / f"AUDIT_{tag}.xlsx", tables=tables, checks=checks,
+TypeError: write_audit() got an unexpected keyword argument 'eparkeia_after'
+
+----- 2026-08-13 09:08:33 -----
+Εντολή: main.py phase --klados ΠΕ06 --region Α΄ΘΕΣΣΑΛΟΝΙΚΗΣ
+Traceback (most recent call last):
+  File "C:\Users\thoma\Teachers\main.py", line 586, in <module>
+    sys.exit(_run())
+  File "C:\Users\thoma\Teachers\main.py", line 579, in _run
+    return args.func(args)
+  File "C:\Users\thoma\Teachers\main.py", line 448, in cmd_phase
+    fdir = CFG.faseis_dir()
+AttributeError: module 'config' has no attribute 'faseis_dir'
+
+----- 2026-08-21 14:09:11 -----
+Εντολή: main.py predict --klados ΠΕ06 --region ΠΕΛΛΑΣ --moria 56.08
+Traceback (most recent call last):
+  File "C:\Users\thoma\Teachers\main.py", line 1038, in <module>
+    sys.exit(_run())
+  File "C:\Users\thoma\Teachers\main.py", line 1031, in _run
+    return args.func(args)
+  File "C:\Users\thoma\Teachers\main.py", line 907, in cmd_predict
+    thr = rr.last["ΜΟΡΙΑ"]
+KeyError: 'ΜΟΡΙΑ'
+
+----- 2026-08-21 14:09:41 -----
+Εντολή: main.py predict --klados ΠΕ06 --region ΠΕΛΛΑΣ --moria 56.08
+Traceback (most recent call last):
+  File "C:\Users\thoma\Teachers\main.py", line 1038, in <module>
+    sys.exit(_run())
+  File "C:\Users\thoma\Teachers\main.py", line 1031, in _run
+    return args.func(args)
+  File "C:\Users\thoma\Teachers\main.py", line 907, in cmd_predict
+    thr = rr.last["ΜΟΡΙΑ"]
+KeyError: 'ΜΟΡΙΑ'
+
+----- 2026-08-24 14:50:27 -----
+Εντολή: main2.py upgrades --klados ΠΕ06 --year 2025
+Traceback (most recent call last):
+  File "C:\Users\thoma\Teachers\main2.py", line 1320, in <module>
+    sys.exit(_run())
+  File "C:\Users\thoma\Teachers\main2.py", line 1313, in _run
+    return args.func(args)
+  File "C:\Users\thoma\Teachers\main2.py", line 1224, in cmd_upgrades
+    with pd.ExcelWriter(out, engine="openpyxl") as xl:
+  File "C:\Users\thoma\miniconda3\lib\site-packages\pandas\io\excel\_openpyxl.py", line 61, in __init__
+    super().__init__(
+  File "C:\Users\thoma\miniconda3\lib\site-packages\pandas\io\excel\_base.py", line 1246, in __init__
+    self._handles = get_handle(
+  File "C:\Users\thoma\miniconda3\lib\site-packages\pandas\io\common.py", line 882, in get_handle
+    handle = open(handle, ioargs.mode)
+PermissionError: [Errno 13] Permission denied: 'C:\\Users\\thoma\\Teachers\\anaplhrwtes\\output\\ΑΝΑΒΑΘΜΙΣΕΙΣ_ΠΕ06.xlsx'
