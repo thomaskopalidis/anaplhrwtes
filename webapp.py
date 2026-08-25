@@ -607,14 +607,19 @@ FULL_TEMPLATE = """
       </div>
     </div>
     <div class="row">
-      <div class="field">
-        <label for="exclude_year">Εξαίρεση ήδη προσληφθέντων στο έτος (προαιρετικό)</label>
-        <select id="exclude_year" name="exclude_year">
-          <option value="" {{ 'selected' if not form.exclude_year }}>— καμία εξαίρεση —</option>
-          {% for y in year_options %}
-          <option value="{{ y }}" {{ 'selected' if form.exclude_year==y }}>{{ y }}</option>
-          {% endfor %}
-        </select>
+      <div class="field" style="flex:1 1 260px;">
+        <label>Εξαίρεση ήδη προσληφθέντων στα έτη (προαιρετικό — μπορείς να διαλέξεις παραπάνω από ένα)</label>
+        {% if year_options %}
+        {% for y in year_options %}
+        <div class="checkline" style="margin-bottom:5px;">
+          <input type="checkbox" id="excl_{{ loop.index }}" name="exclude_years" value="{{ y }}"
+                 {{ 'checked' if y in form.exclude_years }}>
+          <label for="excl_{{ loop.index }}" style="font-weight:400;">{{ y }}</label>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p class="hint" style="margin:0;">(δεν βρέθηκαν διαθέσιμα έτη στον φάκελο φάσεων)</p>
+        {% endif %}
       </div>
       <div class="field">
         <label for="top_regions">Πλήθος περιοχών στη λίστα</label>
@@ -644,14 +649,14 @@ FULL_TEMPLATE = """
 @app.route("/full", methods=["GET", "POST"])
 def full():
     form = {"klados": "", "region": "", "subcodes": False, "monimoi": True,
-            "exclude_year": "", "top_regions": "25"}
+            "exclude_years": [], "top_regions": "25"}
     output, error = None, None
     if request.method == "POST":
         form["klados"] = request.form.get("klados", "").strip().upper()
         form["region"] = request.form.get("region", "").strip()
         form["subcodes"] = bool(request.form.get("subcodes"))
         form["monimoi"] = bool(request.form.get("monimoi"))
-        form["exclude_year"] = request.form.get("exclude_year", "").strip()
+        form["exclude_years"] = request.form.getlist("exclude_years")
         form["top_regions"] = request.form.get("top_regions", "25").strip()
         if not form["klados"]:
             error = "Χρειάζεται κωδικός κλάδου."
@@ -666,7 +671,7 @@ def full():
                     monimoi=str(core.CFG.monimoi_dir()) if form["monimoi"] else None,
                     hires=None, region=form["region"] or None,
                     subcodes=form["subcodes"], top_regions=top_regions,
-                    exclude_year=form["exclude_year"] or None,
+                    exclude_year=",".join(form["exclude_years"]) if form["exclude_years"] else None,
                 )
                 output = _run_capture(core.cmd_full, args)
     return render_page(
