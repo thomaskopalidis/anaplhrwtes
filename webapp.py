@@ -169,6 +169,61 @@ def _available_years():
     return result
 
 
+_last_update_cache = {"value": None, "ts": 0.0}
+
+
+def _last_data_update() -> "str | None":
+    """Πιο πρόσφατη ημερομηνία τροποποίησης ανάμεσα στα αρχεία πινάκων/μονίμων/
+    φάσεων, μορφοποιημένη στα ελληνικά (π.χ. '25 Αυγούστου 2026'). None αν δεν
+    βρεθεί κανένα αρχείο."""
+    now = time.monotonic()
+    if _last_update_cache["value"] is not None and now - _last_update_cache["ts"] < _CACHE_TTL:
+        return _last_update_cache["value"]
+    result = None
+    try:
+        latest_ts = None
+        for getter in (core.CFG.pinakes_dir, core.CFG.monimoi_dir, core.CFG.faseis_dir):
+            d = getter()
+            if not d.exists():
+                continue
+            for f in d.rglob("*"):
+                if f.is_file() and f.suffix.lower() in DATA_SUFFIXES:
+                    mtime = f.stat().st_mtime
+                    if latest_ts is None or mtime > latest_ts:
+                        latest_ts = mtime
+        if latest_ts is not None:
+            import datetime
+            dt = datetime.datetime.fromtimestamp(latest_ts)
+            result = f"{dt.day} {_ACADEMIC_MONTH_NAMES[dt.month]} {dt.year}"
+    except Exception:                                                # noqa: BLE001
+        result = None
+    _last_update_cache["value"], _last_update_cache["ts"] = result, now
+    return result
+
+
+_moriodotisi_cache = {"value": None, "ts": 0.0}
+
+
+def _load_moriodotisi() -> list:
+    """Φορτώνει το data/moriodotisi.json (λίστα ΟΜΑΔΩΝ κατηγοριών μοριοδότησης),
+    αν υπάρχει. Επιστρέφει [] αν λείπει το αρχείο ή έχει πρόβλημα."""
+    now = time.monotonic()
+    if _moriodotisi_cache["value"] is not None and now - _moriodotisi_cache["ts"] < _CACHE_TTL:
+        return _moriodotisi_cache["value"]
+    result = []
+    path = core.CFG.DATA_DIR / "moriodotisi.json"
+    if path.exists():
+        try:
+            import json
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            result = data.get("ομάδες", [])
+        except Exception:                                            # noqa: BLE001
+            result = []
+    _moriodotisi_cache["value"], _moriodotisi_cache["ts"] = result, now
+    return result
+
+
 _ACADEMIC_MONTH_ORDER = {9: 0, 10: 1, 11: 2, 12: 3, 1: 4, 2: 5, 3: 6,
                          4: 7, 5: 8, 6: 9, 7: 10, 8: 11}
 _ACADEMIC_MONTH_NAMES = {
@@ -321,6 +376,10 @@ SHELL_TEMPLATE = """<!doctype html>
     background: #FBEBEA; border: 1px solid #E7B8B4; color: var(--danger);
     padding: 12px 16px; border-radius: 8px; font-size: 13.5px; margin-bottom: 18px;
   }
+  .meta-note {
+    font-size: 12.5px; color: #7C879A; margin: -12px 0 22px; line-height: 1.6;
+  }
+  .meta-note strong { color: #55617A; font-weight: 600; }
   @media (max-width: 720px) {
     .shell { flex-direction: column; }
     nav.sidebar { width: 100%; flex-direction: row; overflow-x: auto; padding: 10px 0; }
@@ -370,6 +429,10 @@ def _klados_datalist(list_id, options):
 # Καρτέλα: Γρήγορος έλεγχος (= εντολή predict)
 # ---------------------------------------------------------------------------
 HOME_TEMPLATE = """
+<p class="meta-note">
+  📖 Στοιχεία από δημόσιους πίνακες κατάταξης του Υπουργείου Παιδείας — ανεπίσημο εργαλείο ελέγχου.
+  {% if last_update %}<br>🕓 Τελευταία ενημέρωση δεδομένων: <strong>{{ last_update }}</strong>{% endif %}
+</p>
 {% if error %}<div class="error-banner">⚠️ {{ error }}</div>{% endif %}
 <div class="card">
   <form method="post">
@@ -415,6 +478,27 @@ HOME_TEMPLATE = """
   </table>
 </div>
 {% endif %}
+{% if moriodotisi %}
+<div class="card">
+  <div style="font-size:12.5px; font-weight:600; color:#3C4A63; margin-bottom:12px;">
+    📐 Μοριοδότηση ανά κατηγορία
+  </div>
+  {% for group in moriodotisi %}
+  <div style="font-size:11.5px; font-weight:700; color:var(--brass); text-transform:uppercase;
+              letter-spacing:.04em; margin:14px 0 4px;">{{ group.τίτλος }}</div>
+  <table style="width:100%; border-collapse:collapse; font-size:13.5px;">
+    {% for item in group.κατηγορίες %}
+    <tr style="border-bottom:1px solid var(--line);">
+      <td style="padding:7px 0;">{{ item.κατηγορία }}</td>
+      <td style="padding:7px 0; text-align:right; font-weight:600; color:#55617A; white-space:nowrap;">
+        {{ item.μόρια }} μόρια <span style="opacity:.65; font-weight:400;">({{ item.μονάδα }})</span>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endfor %}
+</div>
+{% endif %}
 {% if output %}
 <div class="slip">
   <div class="slip-head"><span>Αποτέλεσμα ελέγχου</span><span class="tag">{{ form.klados }}</span></div>
@@ -449,6 +533,8 @@ def home():
         HOME_TEMPLATE, form=form, output=output, error=error,
         klados_datalist=_klados_datalist("klados-list", _available_klados()),
         avg_dates=_average_phase_dates(),
+        last_update=_last_data_update(),
+        moriodotisi=_load_moriodotisi(),
     )
 
 
