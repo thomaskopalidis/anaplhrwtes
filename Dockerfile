@@ -16,4 +16,4 @@ ENV HOME=/home/user \
 ENV PORT=10000
 EXPOSE 10000
 
-CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 app:app
+CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 webapp:app
