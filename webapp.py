@@ -24,9 +24,11 @@ from __future__ import annotations
 
 import builtins
 import io
+import re
 import threading
 import time
 import traceback
+import unicodedata
 import webbrowser
 from contextlib import contextmanager, redirect_stdout
 from types import SimpleNamespace
@@ -621,6 +623,21 @@ HOME_TEMPLATE = """
   <span style="font-size:22px;">{{ '✅' if verdict.ok else '❌' }}</span> {{ verdict.text }}
 </div>
 {% endif %}
+{% if map_ctx %}
+<div class="card">
+  <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:4px;">
+    🗺️ Νομός {{ map_ctx.nomos }} — πρωτεύουσα: {{ map_ctx.capital }}
+  </div>
+  <div style="border-radius:8px; overflow:hidden; border:1px solid var(--line);">
+    <iframe src="{{ map_ctx.embed_url }}" style="width:100%; height:320px; border:0; display:block;"
+            loading="lazy" title="Χάρτης νομού {{ map_ctx.nomos }}"></iframe>
+  </div>
+  <a href="{{ map_ctx.link_url }}" target="_blank" rel="noopener"
+     style="display:inline-block; margin-top:8px; font-size:12px; color:var(--brass);">
+    Άνοιγμα σε μεγαλύτερο χάρτη ↗
+  </a>
+</div>
+{% endif %}
 {% if output %}
 <div class="slip">
   <div class="slip-head">
@@ -634,6 +651,116 @@ HOME_TEMPLATE = """
 </div>
 {% endif %}
 """
+
+
+# ---------------------------------------------------------------------------
+# Χάρτης: αναγνώριση νομού από το κείμενο μιας "περιοχής διορισμού" (π.χ.
+# "Α' ΕΒΡΟΥ", "Δ' ΚΥΚΛΑΔΩΝ (Δ.Ε.)"), και συντεταγμένες πρωτεύουσας για να
+# δείξουμε OpenStreetMap χάρτη γύρω από εκεί.
+# ---------------------------------------------------------------------------
+NOMOI = {
+    "ΑΤΤΙΚΗΣ": {"πρωτεύουσα": "Αθήνα", "lat": 37.9838, "lng": 23.7275},
+    "ΘΕΣΣΑΛΟΝΙΚΗΣ": {"πρωτεύουσα": "Θεσσαλονίκη", "lat": 40.6401, "lng": 22.9444},
+    "ΕΒΡΟΥ": {"πρωτεύουσα": "Αλεξανδρούπολη", "lat": 40.8481, "lng": 25.8742},
+    "ΡΟΔΟΠΗΣ": {"πρωτεύουσα": "Κομοτηνή", "lat": 41.1217, "lng": 25.4064},
+    "ΞΑΝΘΗΣ": {"πρωτεύουσα": "Ξάνθη", "lat": 41.1352, "lng": 24.8880},
+    "ΚΑΒΑΛΑΣ": {"πρωτεύουσα": "Καβάλα", "lat": 40.9397, "lng": 24.4023},
+    "ΔΡΑΜΑΣ": {"πρωτεύουσα": "Δράμα", "lat": 41.1524, "lng": 24.1477},
+    "ΣΕΡΡΩΝ": {"πρωτεύουσα": "Σέρρες", "lat": 41.0864, "lng": 23.5486},
+    "ΚΙΛΚΙΣ": {"πρωτεύουσα": "Κιλκίς", "lat": 40.9950, "lng": 22.8756},
+    "ΠΕΛΛΑΣ": {"πρωτεύουσα": "Έδεσσα", "lat": 40.7999, "lng": 22.0463},
+    "ΗΜΑΘΙΑΣ": {"πρωτεύουσα": "Βέροια", "lat": 40.5233, "lng": 22.2019},
+    "ΠΙΕΡΙΑΣ": {"πρωτεύουσα": "Κατερίνη", "lat": 40.2700, "lng": 22.5031},
+    "ΚΟΖΑΝΗΣ": {"πρωτεύουσα": "Κοζάνη", "lat": 40.3006, "lng": 21.7885},
+    "ΓΡΕΒΕΝΩΝ": {"πρωτεύουσα": "Γρεβενά", "lat": 40.0864, "lng": 21.4256},
+    "ΚΑΣΤΟΡΙΑΣ": {"πρωτεύουσα": "Καστοριά", "lat": 40.5167, "lng": 21.2686},
+    "ΦΛΩΡΙΝΑΣ": {"πρωτεύουσα": "Φλώρινα", "lat": 40.7826, "lng": 21.4111},
+    "ΙΩΑΝΝΙΝΩΝ": {"πρωτεύουσα": "Ιωάννινα", "lat": 39.6650, "lng": 20.8537},
+    "ΘΕΣΠΡΩΤΙΑΣ": {"πρωτεύουσα": "Ηγουμενίτσα", "lat": 39.5017, "lng": 20.2597},
+    "ΑΡΤΑΣ": {"πρωτεύουσα": "Άρτα", "lat": 39.1611, "lng": 20.9836},
+    "ΠΡΕΒΕΖΑΣ": {"πρωτεύουσα": "Πρέβεζα", "lat": 38.9581, "lng": 20.7528},
+    "ΛΑΡΙΣΑΣ": {"πρωτεύουσα": "Λάρισα", "lat": 39.6390, "lng": 22.4191},
+    "ΤΡΙΚΑΛΩΝ": {"πρωτεύουσα": "Τρίκαλα", "lat": 39.5556, "lng": 21.7679},
+    "ΚΑΡΔΙΤΣΑΣ": {"πρωτεύουσα": "Καρδίτσα", "lat": 39.3644, "lng": 21.9218},
+    "ΜΑΓΝΗΣΙΑΣ": {"πρωτεύουσα": "Βόλος", "lat": 39.3622, "lng": 22.9427},
+    "ΚΕΡΚΥΡΑΣ": {"πρωτεύουσα": "Κέρκυρα", "lat": 39.6243, "lng": 19.9217},
+    "ΛΕΥΚΑΔΑΣ": {"πρωτεύουσα": "Λευκάδα", "lat": 38.7089, "lng": 20.6444},
+    "ΚΕΦΑΛΛΗΝΙΑΣ": {"πρωτεύουσα": "Αργοστόλι", "lat": 38.1755, "lng": 20.4880},
+    "ΖΑΚΥΝΘΟΥ": {"πρωτεύουσα": "Ζάκυνθος", "lat": 37.7870, "lng": 20.8993},
+    "ΑΙΤΩΛΟΑΚΑΡΝΑΝΙΑΣ": {"πρωτεύουσα": "Μεσολόγγι", "lat": 38.3712, "lng": 21.4283},
+    "ΑΧΑΪΑΣ": {"πρωτεύουσα": "Πάτρα", "lat": 38.2466, "lng": 21.7346},
+    "ΗΛΕΙΑΣ": {"πρωτεύουσα": "Πύργος", "lat": 37.6706, "lng": 21.4428},
+    "ΒΟΙΩΤΙΑΣ": {"πρωτεύουσα": "Λιβαδειά", "lat": 38.4360, "lng": 22.8757},
+    "ΕΥΒΟΙΑΣ": {"πρωτεύουσα": "Χαλκίδα", "lat": 38.4638, "lng": 23.5959},
+    "ΦΘΙΩΤΙΔΑΣ": {"πρωτεύουσα": "Λαμία", "lat": 38.9008, "lng": 22.4353},
+    "ΦΩΚΙΔΑΣ": {"πρωτεύουσα": "Άμφισσα", "lat": 38.5261, "lng": 22.3775},
+    "ΕΥΡΥΤΑΝΙΑΣ": {"πρωτεύουσα": "Καρπενήσι", "lat": 39.0004, "lng": 21.7749},
+    "ΑΡΚΑΔΙΑΣ": {"πρωτεύουσα": "Τρίπολη", "lat": 37.5083, "lng": 22.3765},
+    "ΑΡΓΟΛΙΔΑΣ": {"πρωτεύουσα": "Ναύπλιο", "lat": 37.5673, "lng": 22.7997},
+    "ΚΟΡΙΝΘΙΑΣ": {"πρωτεύουσα": "Κόρινθος", "lat": 37.9407, "lng": 22.9573},
+    "ΛΑΚΩΝΙΑΣ": {"πρωτεύουσα": "Σπάρτη", "lat": 37.0745, "lng": 22.4318},
+    "ΜΕΣΣΗΝΙΑΣ": {"πρωτεύουσα": "Καλαμάτα", "lat": 37.0389, "lng": 22.1142},
+    "ΧΑΝΙΩΝ": {"πρωτεύουσα": "Χανιά", "lat": 35.5138, "lng": 24.0180},
+    "ΡΕΘΥΜΝΗΣ": {"πρωτεύουσα": "Ρέθυμνο", "lat": 35.3667, "lng": 24.4833},
+    "ΗΡΑΚΛΕΙΟΥ": {"πρωτεύουσα": "Ηράκλειο", "lat": 35.3387, "lng": 25.1442},
+    "ΛΑΣΙΘΙΟΥ": {"πρωτεύουσα": "Άγιος Νικόλαος", "lat": 35.1892, "lng": 25.7189},
+    "ΔΩΔΕΚΑΝΗΣΟΥ": {"πρωτεύουσα": "Ρόδος", "lat": 36.4341, "lng": 28.2176},
+    "ΚΥΚΛΑΔΩΝ": {"πρωτεύουσα": "Ερμούπολη (Σύρος)", "lat": 37.4467, "lng": 24.9425},
+    "ΣΑΜΟΥ": {"πρωτεύουσα": "Σάμος (Βαθύ)", "lat": 37.7539, "lng": 26.9739},
+    "ΧΙΟΥ": {"πρωτεύουσα": "Χίος", "lat": 38.3686, "lng": 26.1364},
+    "ΛΕΣΒΟΥ": {"πρωτεύουσα": "Μυτιλήνη", "lat": 39.1064, "lng": 26.5556},
+    "ΠΕΙΡΑΙΩΣ": {"πρωτεύουσα": "Πειραιάς", "lat": 37.9475, "lng": 23.6362},
+}
+# Εναλλακτικές γραφές που εμφανίζονται συχνά στις "περιοχές διορισμού"
+NOMOI_ALIASES = {
+    "ΑΘΗΝΩΝ": "ΑΤΤΙΚΗΣ", "ΑΘΗΝΑΣ": "ΑΤΤΙΚΗΣ", "ΠΕΙΡΑΙΑ": "ΠΕΙΡΑΙΩΣ",
+    "ΘΕΣΣΑΛΟΝΙΚΗ": "ΘΕΣΣΑΛΟΝΙΚΗΣ",
+}
+
+
+def _strip_greek_accents(s: str) -> str:
+    """Αφαιρεί τόνους (π.χ. 'ΘΕΣΣΑΛΟΝΊΚΗΣ' -> 'ΘΕΣΣΑΛΟΝΙΚΗΣ') — το .upper() στα
+    ελληνικά ΔΕΝ το κάνει αυτόματα, το κρατάει τον τόνο στο κεφαλαίο."""
+    nfd = unicodedata.normalize("NFD", s)
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+
+
+def _match_nomos(location_text: str):
+    """Προσπαθεί να αναγνωρίσει σε ποιον νομό αναφέρεται μια 'περιοχή
+    διορισμού' (π.χ. "Α' ΕΒΡΟΥ", "Δ' ΚΥΚΛΑΔΩΝ (Δ.Ε.)"). Επιστρέφει
+    (όνομα_νομού, στοιχεία) ή (None, None) αν δεν αναγνωριστεί με σιγουριά."""
+    if not location_text:
+        return None, None
+    s = _strip_greek_accents(location_text.strip().upper())
+    s = re.sub(r"^[ΑΒΓΔΕΖΗ]['΄]\s*", "", s)          # αρχικό Α'/Β'/Γ'... αν υπάρχει
+    s = re.sub(r"\([^)]*\)", "", s)                    # (Δ.Ε.), (Π.Ε.) κ.λπ.
+    s = re.sub(r"[-–].*$", "", s)                       # "- ΜΕΙΩΜΕΝΟΥ ΩΡΑΡΙΟΥ" κ.λπ.
+    s = s.strip()
+    if not s:
+        return None, None
+    if s in NOMOI:
+        return s, NOMOI[s]
+    if s in NOMOI_ALIASES:
+        key = NOMOI_ALIASES[s]
+        return key, NOMOI[key]
+    for key in NOMOI:
+        if key in s or s in key:
+            return key, NOMOI[key]
+    for alias, key in NOMOI_ALIASES.items():
+        if alias in s or s in alias:
+            return key, NOMOI[key]
+    return None, None
+
+
+def _osm_embed_url(lat: float, lng: float, span: float = 0.55) -> str:
+    left, right = lng - span, lng + span
+    bottom, top = lat - span * 0.7, lat + span * 0.7
+    return (f"https://www.openstreetmap.org/export/embed.html?"
+            f"bbox={left},{bottom},{right},{top}&layer=mapnik&marker={lat},{lng}")
+
+
+def _osm_link(lat: float, lng: float) -> str:
+    return f"https://www.openstreetmap.org/?mlat={lat}&mlon={lng}#map=9/{lat}/{lng}"
 
 
 def _extract_verdict(output_text: str):
@@ -669,6 +796,16 @@ def home():
                 args = SimpleNamespace(klados=form["klados"], region=form["region"],
                                         moria=moria, name=None, subcodes=form["subcodes"])
                 output = _run_capture(core.cmd_predict, args)
+
+    nomos_name, nomos_info = _match_nomos(form["region"]) if form["region"] else (None, None)
+    map_ctx = None
+    if nomos_info:
+        map_ctx = {
+            "nomos": nomos_name.capitalize(), "capital": nomos_info["πρωτεύουσα"],
+            "embed_url": _osm_embed_url(nomos_info["lat"], nomos_info["lng"]),
+            "link_url": _osm_link(nomos_info["lat"], nomos_info["lng"]),
+        }
+
     return render_page(
         "home", "Γρήγορος έλεγχος", "Δώσε κλάδο, τοποθεσία-στόχο και τα μόριά σου — θα δεις πού θα έμπαινες φέτος.",
         HOME_TEMPLATE, form=form, output=output, error=error,
@@ -677,6 +814,7 @@ def home():
         avg_dates=_average_phase_dates(),
         last_update=_last_data_update(),
         moriodotisi=_load_moriodotisi(),
+        map_ctx=map_ctx,
     )
 
 
@@ -1048,6 +1186,41 @@ def healthz():
 
 def _open_browser():
     webbrowser.open("http://127.0.0.1:5000/")
+
+
+def _warm_cache():
+    """Προθερμαίνει τις cache (λίστες κλάδων/ετών + αρχεία φάσεων του πιο
+    πρόσφατου σχολικού έτους) ΠΡΙΝ έρθει ο πρώτος πραγματικός επισκέπτης.
+    Χωρίς αυτό, μετά από κάθε ξύπνημα του Render από τον ύπνο (= καινούριο
+    container, άδεια μνήμη) ο πρώτος επισκέπτης θα πλήρωνε ξανά το κόστος
+    της πρώτης, αργής φόρτωσης — έτσι το κάνει ο server μόνος του, στο
+    παρασκήνιο, όσο ακόμα ξεκινάει."""
+    try:
+        _available_klados()
+        _available_years()
+        fdir = core.CFG.faseis_dir()
+        if not fdir.exists():
+            return
+        out_dir = core.CFG.DATA_DIR / core.CFG.OUTPUT_SUBDIR
+        cutoff = getattr(core, "MIN_RELEVANT_SCHOOL_YEAR", 2025)
+        for f in fdir.rglob("*"):
+            if f.suffix.lower() not in DATA_SUFFIXES or is_own_output(f, out_dir):
+                continue
+            rel = f.relative_to(fdir)
+            _, y = core.extract_phase_year(" / ".join(rel.parts))
+            try:
+                y_start = int(str(y).split("-")[0]) if y else None
+            except (ValueError, IndexError):
+                y_start = None
+            if y_start is not None and y_start >= cutoff:
+                core._load_file_cached(f)
+    except Exception:                                                # noqa: BLE001
+        pass  # η προθέρμανση είναι απλά βελτιστοποίηση — ποτέ δεν πρέπει να ρίξει τον server
+
+
+# Ξεκινάει αμέσως μόλις εισαχθεί αυτό το module — δηλαδή και όταν το τρέχεις
+# τοπικά (python webapp.py) ΚΑΙ όταν το εισάγει το gunicorn στο Render.
+threading.Thread(target=_warm_cache, daemon=True).start()
 
 
 if __name__ == "__main__":
