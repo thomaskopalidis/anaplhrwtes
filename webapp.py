@@ -117,6 +117,13 @@ _CACHE_TTL = 120  # δευτερόλεπτα
 _klados_cache = {"value": None, "ts": 0.0}
 _years_cache = {"value": None, "ts": 0.0}
 
+# Ρητή λίστα ασφαλείας: κωδικοί που δεν υπάρχουν ΠΟΤΕ σκέτοι, μόνο ως
+# υποκλάδοι (π.χ. ΠΕ04 → μόνο ΠΕ04.01/.02/.03/.04). Λειτουργεί ΕΠΙΠΡΟΣΘΕΤΑ
+# στη γενική λογική παρακάτω (που ήδη τους αποκλείει αυτόματα) — απλά
+# εγγύηση ότι θα λείπουν σίγουρα, ό,τι κι αν γίνεται. Πρόσθεσε κι άλλους
+# εδώ αν χρειαστεί.
+_NEVER_STANDALONE = {"ΠΕ04"}
+
 
 def _available_klados():
     now = time.monotonic()
@@ -137,7 +144,7 @@ def _available_klados():
             rx = core.klados_regex(code, False)
             if any(rx.search(core.norm_code_text(f.stem)) for f in pinakes):
                 real.add(code)
-        result = sorted(real)
+        result = sorted(real - _NEVER_STANDALONE)
     except Exception:
         result = []
     _klados_cache["value"], _klados_cache["ts"] = result, now
