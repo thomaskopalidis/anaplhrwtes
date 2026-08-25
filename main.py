@@ -2,7 +2,8 @@
 """
 ΣΥΣΤΗΜΑ ΑΝΑΛΥΣΗΣ ΠΙΝΑΚΩΝ ΑΝΑΠΛΗΡΩΤΩΝ
 
-Ο φάκελος δεδομένων ορίζεται στο config.py (DATA_DIR) 
+Ο φάκελος δεδομένων ορίζεται στο config.py (DATA_DIR) — δεν χρειάζεται να τον
+δίνεις κάθε φορά.
 
 Εντολές:
   python main.py inspect
@@ -72,6 +73,33 @@ def _load_group(path, kind):
     for f in _files_of(path, kind):
         tables.extend(load_path(f))
     return tables
+
+
+# ---------------------------------------------------------------------------
+# Ζητούμενο: στο hosted webapp, κάθε αίτημα (Γρήγορος έλεγχος, Βάση φάσης,
+# Αναβαθμίσεις) ξαναφόρτωνε τα ΙΔΙΑ αρχεία φάσεων/πινάκων από την αρχή —
+# ακριβό σε Excel parsing, ειδικά με περιορισμένη CPU (π.χ. δωρεάν Render) και
+# όσο μεγαλώνει το ιστορικό (τώρα 3 σχολικά έτη φάσεων μαζί). Cache στη μνήμη
+# της διεργασίας, βάσει (διαδρομή, ημερομηνία τροποποίησης) — ξαναδιαβάζεται
+# ΜΟΝΟ όταν πραγματικά αλλάξει το αρχείο στον δίσκο, όχι σε κάθε αίτημα.
+_FILE_LOAD_CACHE: dict = {}
+
+
+def _load_file_cached(f: Path):
+    """Ισοδύναμο με concat(load_path(f)), αλλά με cache. Επιστρέφει None αν
+    το αρχείο δεν διαβάστηκε (ίδια σημασιολογία με 'tabs κενό')."""
+    try:
+        mtime = f.stat().st_mtime
+    except OSError:
+        mtime = None
+    key = str(f)
+    cached = _FILE_LOAD_CACHE.get(key)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
+    tabs = load_path(f)
+    df = concat(tabs) if tabs else None
+    _FILE_LOAD_CACHE[key] = (mtime, df)
+    return df
 
 
 def _line(char="─", n=78):
@@ -380,10 +408,9 @@ def cmd_full(args):
             else:
                 frames = []
                 for f in year_files:
-                    tabs = load_path(f)
-                    if not tabs:
+                    d = _load_file_cached(f)
+                    if d is None:
                         continue
-                    d = concat(tabs)
                     dk2, _ = filter_klados(d, args.klados, args.subcodes)
                     if not dk2.empty:
                         frames.append(dk2)
@@ -767,11 +794,10 @@ def cmd_phase(args):
     detail_rows = []
     for f in chosen:
         tag = tag_of[f]
-        tables = load_path(f)
-        if not tables:
+        df = _load_file_cached(f)
+        if df is None:
             print(f"\n📄 {tag}  ({f.name})\n   ⚠️  Το αρχείο δεν διαβάστηκε.")
             continue
-        df = concat(tables)
         dfk, how = filter_klados(df, klados, args.subcodes)
         print(f"\n📄 {tag}  ({f.name})")
         if dfk.empty:
@@ -888,6 +914,21 @@ def cmd_phase(args):
 # ---------------------------------------------------------------------------
 _PHASE_ORDER_IDX = {L: i for i, L in enumerate(["Α", "Β", "Γ", "Δ", "Ε", "ΣΤ", "Ζ", "Η"])}
 
+# Ζητούμενο: η «Γρήγορος έλεγχος» (predict) να χρησιμοποιεί μόνο πρόσφατα
+# σχολικά έτη, όχι όλο το ιστορικό — πιο σχετικό αποτέλεσμα ΚΑΙ σημαντικά πιο
+# γρήγορο (λιγότερα αρχεία φάσεων να διαβαστούν/επεξεργαστούν). Άλλαξε αυτόν
+# τον αριθμό όποτε προχωρήσει το «τρέχον» σχολικό έτος (π.χ. σε 2026 τον
+# Σεπτέμβριο του 2026).
+MIN_RELEVANT_SCHOOL_YEAR = 2025
+
+
+def _year_start(school_year) -> "int | None":
+    """'2025-2026' -> 2025. None αν δεν αναγνωρίζεται η μορφή."""
+    try:
+        return int(str(school_year).split("-")[0])
+    except (ValueError, IndexError):
+        return None
+
 
 def _lookup_person(df: pd.DataFrame, query: str):
     """Ψάχνει με Επώνυμο+Όνομα μέσα στον πίνακα. Επιστρέφει (μόρια, γραμμή) ή (None, None)."""
@@ -999,7 +1040,18 @@ def cmd_predict(args):
         by_year_phase.setdefault(year, {}).setdefault(phase or "?", []).append(f)
 
     predictions = []
-    for year in sorted(by_year_phase):
+    all_years_sorted = sorted(by_year_phase)
+    relevant_years = [y for y in all_years_sorted
+                      if (_year_start(y) or 0) >= MIN_RELEVANT_SCHOOL_YEAR]
+    skipped_years = [y for y in all_years_sorted if y not in relevant_years]
+    if skipped_years:
+        print(f"\nℹ️  Παραλείπονται παλαιότερα έτη ({', '.join(skipped_years)}) — εξετάζονται μόνο"
+              f" τα σχολικά έτη από {MIN_RELEVANT_SCHOOL_YEAR}-{MIN_RELEVANT_SCHOOL_YEAR + 1} και"
+              " μετά, για πιο σχετικό και γρήγορο αποτέλεσμα.")
+    if not relevant_years:
+        print(f"\n⚠️  Δεν βρέθηκαν αρχεία φάσεων από το {MIN_RELEVANT_SCHOOL_YEAR}-"
+              f"{MIN_RELEVANT_SCHOOL_YEAR + 1} και μετά.")
+    for year in relevant_years:
         phases = by_year_phase[year]
         ordered = sorted(phases, key=lambda p: _PHASE_ORDER_IDX.get(p, 99))
         print(f"\n📅 Σχολικό έτος {year}:")
@@ -1011,10 +1063,9 @@ def cmd_predict(args):
         for ph in ordered:
             frames = []
             for f in phases[ph]:
-                tabs = load_path(f)
-                if not tabs:
+                d = _load_file_cached(f)
+                if d is None:
                     continue
-                d = concat(tabs)
                 dk, _ = filter_klados(d, klados, args.subcodes)
                 if not dk.empty:
                     frames.append(dk)
@@ -1255,10 +1306,9 @@ def cmd_upgrades(args):
         for ph in ordered:
             frames = []
             for f in phases[ph]:
-                tabs = load_path(f)
-                if not tabs:
+                d = _load_file_cached(f)
+                if d is None:
                     continue
-                d = concat(tabs)
                 dk, _ = filter_klados(d, klados, args.subcodes)
                 if not dk.empty:
                     frames.append(dk)
@@ -1396,12 +1446,11 @@ def _load_current_pinakas(klados: str, subcodes: bool) -> pd.DataFrame:
     hit_files = [f for f in pinakes if rx.search(norm_code_text(f.stem))]
     if not hit_files:
         return pd.DataFrame()
-    tabs = []
-    for f in hit_files:
-        tabs.extend(load_path(f))
-    if not tabs:
+    frames = [d for d in (_load_file_cached(f) for f in hit_files) if d is not None]
+    if not frames:
         return pd.DataFrame()
-    dfk, _ = filter_klados(concat(tabs), klados, subcodes)
+    combined = frames[0] if len(frames) == 1 else pd.concat(frames, ignore_index=True)
+    dfk, _ = filter_klados(combined, klados, subcodes)
     return dfk
 
 # ---------------------------------------------------------------------------
