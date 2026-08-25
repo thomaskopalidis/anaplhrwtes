@@ -533,7 +533,7 @@ SHELL_TEMPLATE = """<!doctype html>
   // με χρωματισμό. Αν δεν βρεθεί περίγραμμα (άγνωστο όνομα στο OSM, ή
   // πρόβλημα δικτύου), πέφτει πίσω σε απλό pin πάνω στην πρωτεύουσα — ποτέ
   // δεν αφήνει τον χάρτη άδειο/σπασμένο.
-  function loadNomosMap(elId, query, fallbackLat, fallbackLng) {
+  function loadNomosMap(elId, nomosName, fallbackLat, fallbackLng) {
     var map = L.map(elId, { scrollWheelZoom: false }).setView([fallbackLat, fallbackLng], 9);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "© OpenStreetMap contributors", maxZoom: 18,
@@ -547,27 +547,44 @@ SHELL_TEMPLATE = """<!doctype html>
       L.marker([fallbackLat, fallbackLng]).addTo(map);
     }
 
-    var url = "https://nominatim.openstreetmap.org/search?format=json&polygon_geojson=1&limit=1&q="
-      + encodeURIComponent(query);
-    fetch(url, { headers: { Accept: "application/json" } })
-      .then(function (r) { return r.ok ? r.json() : []; })
-      .then(function (data) {
-        if (data && data.length && data[0].geojson) {
-          var layer = L.geoJSON(data[0].geojson, {
-            style: { color: "#B98A3D", weight: 2, fillColor: "#B98A3D", fillOpacity: 0.28 },
-          }).addTo(map);
-          try {
-            map.fitBounds(layer.getBounds(), { padding: [12, 12] });
-          } catch (e) {
-            fallbackMarker();
-          }
-        } else {
-          fallbackMarker();
-        }
-      })
-      .catch(function () {
+    // Δοκιμάζουμε πολλές διατυπώσεις με τη σειρά, γιατί το OpenStreetMap δεν
+    // ονομάζει πάντα τους νομούς με τον ίδιο τρόπο (παλιά "Νομός Χ" έναντι
+    // επίσημης σημερινής "Περιφερειακή Ενότητα Χ" κ.λπ.). Σταματάμε στην
+    // πρώτη που επιστρέψει πραγματικό περίγραμμα (Polygon/MultiPolygon), όχι
+    // απλά ένα σημείο.
+    var attempts = [
+      "Περιφερειακή Ενότητα " + nomosName,
+      "Νομός " + nomosName,
+      nomosName,
+    ];
+
+    function tryAttempt(i) {
+      if (i >= attempts.length) {
         fallbackMarker();
-      });
+        return;
+      }
+      var url = "https://nominatim.openstreetmap.org/search?format=json&polygon_geojson=1"
+        + "&limit=1&countrycodes=gr&q=" + encodeURIComponent(attempts[i]);
+      fetch(url, { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (data) {
+          var geom = data && data.length ? data[0].geojson : null;
+          if (geom && (geom.type === "Polygon" || geom.type === "MultiPolygon")) {
+            var layer = L.geoJSON(geom, {
+              style: { color: "#B98A3D", weight: 2, fillColor: "#B98A3D", fillOpacity: 0.28 },
+            }).addTo(map);
+            try {
+              map.fitBounds(layer.getBounds(), { padding: [12, 12] });
+            } catch (e) {
+              tryAttempt(i + 1);
+            }
+          } else {
+            tryAttempt(i + 1);
+          }
+        })
+        .catch(function () { tryAttempt(i + 1); });
+    }
+    tryAttempt(0);
   }
 </script>
 </body>
@@ -636,7 +653,7 @@ HOME_TEMPLATE = """
     </a>
     <script>
       window.addEventListener("DOMContentLoaded", function () {
-        loadNomosMap("nomos-map", {{ map_ctx.query|tojson }}, {{ map_ctx.lat }}, {{ map_ctx.lng }});
+        loadNomosMap("nomos-map", {{ map_ctx.nomos|tojson }}, {{ map_ctx.lat }}, {{ map_ctx.lng }});
       });
     </script>
   </div>
@@ -873,7 +890,6 @@ def home():
     if nomos_info:
         map_ctx = {
             "nomos": nomos_name.capitalize(), "capital": nomos_info["πρωτεύουσα"],
-            "query": f"Νομός {nomos_name.capitalize()}, Ελλάδα",
             "lat": nomos_info["lat"], "lng": nomos_info["lng"],
             "link_url": _osm_link(nomos_info["lat"], nomos_info["lng"]),
             "sch_url": _sch_embed_url(nomos_info["lat"], nomos_info["lng"]),
