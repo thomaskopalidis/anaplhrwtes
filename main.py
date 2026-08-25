@@ -136,6 +136,26 @@ def _phase_date_range(year: str | None, phase: str | None) -> str:
     return f"{d1.day}/{d1.month}/{d1.year}-{d2.day}/{d2.month}/{d2.year}"
 
 
+def _phase_moria_average() -> dict:
+    """Μέσος όρος μορίων ανά φάση, σε όλα τα έτη του faseis_dates.json που έχουν
+    καταχωρημένη τιμή 'μόρια'. Επιστρέφει {} αν δεν υπάρχουν καθόλου δεδομένα.
+    Γενική/ενδεικτική τιμή — ΔΕΝ είναι ανά κλάδο ή περιοχή."""
+    dates = _load_faseis_dates()
+    sums: dict = {}
+    for year, phases in dates.items():
+        if year.startswith("_") or not isinstance(phases, dict):
+            continue
+        for ph, info in phases.items():
+            if not isinstance(info, dict) or info.get("μόρια") is None:
+                continue
+            try:
+                sums.setdefault(ph, []).append(float(info["μόρια"]))
+            except (TypeError, ValueError):
+                continue
+    order = ["Α", "Β", "Γ", "Δ", "Ε", "ΣΤ", "Ζ", "Η"]
+    return {ph: sum(sums[ph]) / len(sums[ph]) for ph in order if sums.get(ph)}
+
+
 # ---------------------------------------------------------------------------
 def cmd_inspect(args):
     """Δείχνει τι ΑΚΡΙΒΩΣ διαβάζει το πρόγραμμα από κάθε αρχείο."""
@@ -1088,6 +1108,16 @@ def cmd_predict(args):
             print(f"   • {year} ({typ}): {label}  (χρειάστηκαν {thr:.3f} μόρια{seira_txt}"
                   " στον τωρινό πίνακα)")
         print("\n   ⚠️  Η φετινή χρονιά μπορεί να διαφέρει — αλλάζει ο αριθμός κενών/υποψηφίων.")
+
+    avg_moria = _phase_moria_average()
+    if avg_moria:
+        print("\n" + "=" * 78)
+        print(" ΕΝΔΕΙΚΤΙΚΟΣ ΜΕΣΟΣ ΟΡΟΣ ΜΟΡΙΩΝ ΑΝΑ ΦΑΣΗ  (γενικό στοιχείο, όχι ανά κλάδο/περιοχή)")
+        print("=" * 78)
+        for ph, avg in avg_moria.items():
+            print(f"   • {ph}΄ Φάση: {avg:.2f} μόρια  (μέσος όρος διαθέσιμων ετών στο faseis_dates.json)")
+        print("\n   ⚠️  Γενική ένδειξη από ιστορικά στοιχεία που μας έχεις δώσει — δεν αφορά")
+        print("      ειδικά τον κλάδο ή την περιοχή που ζήτησες παραπάνω.")
     return 0
 
 
