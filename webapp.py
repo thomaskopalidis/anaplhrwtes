@@ -107,13 +107,25 @@ def _run_capture(cmd_func, args_ns) -> str:
 # ---------------------------------------------------------------------------
 # Βοηθητικά: λίστες κλάδων / ετών για τα πεδία επιλογής
 # ---------------------------------------------------------------------------
+
+
 def _available_klados():
     try:
         pinakes = core._files_of(core.CFG.pinakes_dir(), "base")
         codes = set()
         for f in pinakes:
             codes.update(core.extract_klados_codes(f.stem))
-        return sorted(codes)
+        # Κράτα μόνο κωδικούς που αντιστοιχούν σε ΠΡΑΓΜΑΤΙΚΟ αρχείο χωρίς
+        # υποκωδικούς (π.χ. να ΜΗΝ εμφανίζεται σκέτο "ΠΕ04" στη λίστα αν
+        # υπάρχουν μόνο αρχεία ΠΕ04.01/ΠΕ04.02 κ.λπ. — το σκέτο "ΠΕ04" τότε
+        # δεν αντιστοιχεί σε δικό του πίνακα, μόνο σε συνδυασμό με το
+        # "υποκλάδους" τσεκ-μποξ).
+        real = set()
+        for code in codes:
+            rx = core.klados_regex(code, False)
+            if any(rx.search(core.norm_code_text(f.stem)) for f in pinakes):
+                real.add(code)
+        return sorted(real)
     except Exception:
         return []
 
@@ -135,6 +147,55 @@ def _available_years():
         return sorted(years)
     except Exception:
         return []
+
+
+_ACADEMIC_MONTH_ORDER = {9: 0, 10: 1, 11: 2, 12: 3, 1: 4, 2: 5, 3: 6,
+                         4: 7, 5: 8, 6: 9, 7: 10, 8: 11}
+_ACADEMIC_MONTH_NAMES = {
+    1: "Ιανουαρίου", 2: "Φεβρουαρίου", 3: "Μαρτίου", 4: "Απριλίου",
+    5: "Μαΐου", 6: "Ιουνίου", 7: "Ιουλίου", 8: "Αυγούστου",
+    9: "Σεπτεμβρίου", 10: "Οκτωβρίου", 11: "Νοεμβρίου", 12: "Δεκεμβρίου",
+}
+
+
+def _average_phase_dates():
+    """Κατά προσέγγιση μέσος όρος ημερομηνίας ανά φάση, σε όλα τα σχολικά έτη
+    που υπάρχουν μέσα στο data/faseis_dates.json. Απλή προσέγγιση 30ήμερων
+    μηνών (αρκετή για ενδεικτικό 'γύρω στις...', όχι ακριβής ημερολογιακή
+    πράξη) — αν λείπει το αρχείο ή δεν έχει δεδομένα, επιστρέφει κενό."""
+    import datetime
+    dates = core._load_faseis_dates()
+    by_phase: dict = {}
+    for year, phases in dates.items():
+        if year.startswith("_") or not isinstance(phases, dict):
+            continue
+        for phase, info in phases.items():
+            frm, to = info.get("από"), info.get("έως")
+            if not frm or not to:
+                continue
+            try:
+                d1 = datetime.date.fromisoformat(frm)
+                d2 = datetime.date.fromisoformat(to)
+            except ValueError:
+                continue
+            if d1.month not in _ACADEMIC_MONTH_ORDER:
+                continue
+            mid_day = d1.day + (d2 - d1).days / 2
+            offset = _ACADEMIC_MONTH_ORDER[d1.month] * 30 + mid_day
+            by_phase.setdefault(phase, []).append((offset, year))
+
+    result = {}
+    reverse_order = {v: k for k, v in _ACADEMIC_MONTH_ORDER.items()}
+    for phase, entries in sorted(by_phase.items()):
+        avg_offset = sum(o for o, _ in entries) / len(entries)
+        month_idx = int(avg_offset // 30)
+        day = max(1, round(avg_offset % 30))
+        month = reverse_order.get(month_idx, 9)
+        result[phase] = {
+            "text": f"γύρω στις {day} {_ACADEMIC_MONTH_NAMES[month]}",
+            "years": ", ".join(y for _, y in entries),
+        }
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +378,23 @@ HOME_TEMPLATE = """
     <button class="run" type="submit">Έλεγχος</button>
   </form>
 </div>
+{% if avg_dates %}
+<div class="card">
+  <div style="font-size:12.5px; font-weight:600; color:#3C4A63; margin-bottom:10px;">
+    📅 Μέσος όρος ημερομηνιών ανά φάση (βάσει ιστορικού — ενδεικτικό, όχι εγγύηση)
+  </div>
+  <table style="width:100%; border-collapse:collapse; font-size:13.5px;">
+    {% for phase, info in avg_dates.items() %}
+    <tr style="border-bottom:1px solid var(--line);">
+      <td style="padding:7px 0; font-weight:600; width:90px;">{{ phase }}΄ Φάση</td>
+      <td style="padding:7px 0; text-align:right; color:#55617A;">
+        {{ info.text }} <span style="opacity:.65;">({{ info.years }})</span>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
 {% if output %}
 <div class="slip">
   <div class="slip-head"><span>Αποτέλεσμα ελέγχου</span><span class="tag">{{ form.klados }}</span></div>
@@ -350,6 +428,7 @@ def home():
         "home", "Γρήγορος έλεγχος", "Δώσε κλάδο, τοποθεσία-στόχο και τα μόριά σου — θα δεις πού θα έμπαινες φέτος.",
         HOME_TEMPLATE, form=form, output=output, error=error,
         klados_datalist=_klados_datalist("klados-list", _available_klados()),
+        avg_dates=_average_phase_dates(),
     )
 
 
