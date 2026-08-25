@@ -87,6 +87,55 @@ def _fmt_person(p: dict) -> str:
     return f"{name} {extra}".strip()
 
 
+# Ζητούμενο: προαιρετικό αρχείο data/faseis_dates.json με τις πραγματικές
+# ημερομηνίες ανάληψης υπηρεσίας ανά φάση/σχολικό έτος (π.χ. "Α φάση 2024-2025:
+# 5-6 Σεπτεμβρίου 2024"). Αν υπάρχει, οι εντολές phase/predict/upgrades δείχνουν
+# αυτές τις ημερομηνίες δίπλα σε κάθε ετικέτα φάσης. Αν δεν υπάρχει το αρχείο
+# (ή λείπει κάποιο έτος/φάση μέσα του), απλά δεν εμφανίζεται τίποτα παραπάνω —
+# καμία επίδραση στην υπόλοιπη λειτουργία.
+_FASEIS_DATES_CACHE: dict | None = None
+
+
+def _load_faseis_dates() -> dict:
+    global _FASEIS_DATES_CACHE
+    if _FASEIS_DATES_CACHE is not None:
+        return _FASEIS_DATES_CACHE
+    path = CFG.DATA_DIR / "faseis_dates.json"
+    data = {}
+    if path.exists():
+        try:
+            import json
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:                                           # noqa: BLE001
+            data = {}
+    _FASEIS_DATES_CACHE = data
+    return data
+
+
+def _phase_date_range(year: str | None, phase: str | None) -> str:
+    """Επιστρέφει π.χ. '5-6/9/2024' αν βρεθεί στο faseis_dates.json, αλλιώς κενό."""
+    if not year or not phase:
+        return ""
+    info = _load_faseis_dates().get(year, {}).get(phase)
+    if not info:
+        return ""
+    frm, to = info.get("από"), info.get("έως")
+    if not frm or not to:
+        return ""
+    try:
+        import datetime
+        d1 = datetime.date.fromisoformat(frm)
+        d2 = datetime.date.fromisoformat(to)
+    except ValueError:
+        return ""
+    if d1.year == d2.year and d1.month == d2.month:
+        return f"{d1.day}-{d2.day}/{d2.month}/{d2.year}"
+    if d1.year == d2.year:
+        return f"{d1.day}/{d1.month}-{d2.day}/{d2.month}/{d2.year}"
+    return f"{d1.day}/{d1.month}/{d1.year}-{d2.day}/{d2.month}/{d2.year}"
+
+
 # ---------------------------------------------------------------------------
 def cmd_inspect(args):
     """Δείχνει τι ΑΚΡΙΒΩΣ διαβάζει το πρόγραμμα από κάθε αρχείο."""
@@ -555,6 +604,9 @@ def cmd_phase(args):
         rel = f.relative_to(fdir)
         phase, year = extract_phase_year(" / ".join(rel.parts))
         tag = " ".join(x for x in [f"{phase}΄ ΦΑΣΗ" if phase else None, year] if x)
+        dates = _phase_date_range(year, phase)
+        if dates:
+            tag = f"{tag} ({dates})" if tag else dates
         return tag or f.stem
 
     def extra_hint(f: Path) -> str:
@@ -918,6 +970,9 @@ def cmd_predict(args):
             if not df_k.empty:
                 dcomb = enrich_with_current_moria(dcomb, df_k_ranked)
             label = f"{ph}΄ Φάση" if ph != "?" else "Φάση (άγνωστη)"
+            dates = _phase_date_range(year, ph)
+            if dates:
+                label = f"{label} ({dates})"
 
             if "ΠΕΡΙΟΧΗ" in dcomb.columns:
                 oc_all = dcomb["ΩΡΑΡΙΟ"] if "ΩΡΑΡΙΟ" in dcomb.columns else [None] * len(dcomb)
@@ -1179,7 +1234,9 @@ def cmd_upgrades(args):
             n_other = len(meiomena) - n_de
             show = [c for c in ["ΕΠΩΝΥΜΟ", "ΟΝΟΜΑ", "ΠΑΤΡΩΝΥΜΟ", "ΠΕΡΙΟΧΗ", "ΒΑΘΜΙΔΑ", "ΜΟΡΙΑ",
                                 "ΣΕΙΡΑ_ΦΑΣΗΣ", "ΣΕΙΡΑ_ΤΩΡΙΝΟΥ_ΠΙΝΑΚΑ"] if c in meiomena.columns]
-            print(f"\n📄 {ph}΄ Φάση — ΜΕΙΩΜΕΝΟ ωράριο ({len(meiomena)} άτομα"
+            ph_dates = _phase_date_range(year, ph)
+            ph_dates_txt = f" ({ph_dates})" if ph_dates else ""
+            print(f"\n📄 {ph}΄ Φάση{ph_dates_txt} — ΜΕΙΩΜΕΝΟ ωράριο ({len(meiomena)} άτομα"
                   f" · {n_de} σε θέσεις (Δ.Ε.), {n_other} σε λοιπές):")
             print("   " + meiomena[show].to_string(index=False).replace("\n", "\n   "))
             for _, p in meiomena.iterrows():
@@ -1212,7 +1269,12 @@ def cmd_upgrades(args):
                     continue
                 p2 = plires_by_key[k]
                 if not found_any:
-                    print(f"\n🚀 ΑΝΑΒΑΘΜΙΣΕΙΣ {ph_from}΄ (ΜΕΙΩΜΕΝΟ) → {ph_to}΄ (ΠΛΗΡΕΣ):")
+                    d_from = _phase_date_range(year, ph_from)
+                    d_to = _phase_date_range(year, ph_to)
+                    d_from_txt = f" ({d_from})" if d_from else ""
+                    d_to_txt = f" ({d_to})" if d_to else ""
+                    print(f"\n🚀 ΑΝΑΒΑΘΜΙΣΕΙΣ {ph_from}΄{d_from_txt} (ΜΕΙΩΜΕΝΟ) →"
+                          f" {ph_to}΄{d_to_txt} (ΠΛΗΡΕΣ):")
                 found_any = True
                 m1, m2 = to_float(p.get("ΜΟΡΙΑ")), to_float(p2.get("ΜΟΡΙΑ"))
                 pat = p.get("ΠΑΤΡΩΝΥΜΟ") or ""
