@@ -15,7 +15,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Ο κεντρικός φάκελος δεδομένων. Άλλαξέ τον εδώ, ή όρισε τη μεταβλητή
 # περιβάλλοντος ANAP_DATA, ή δώσε --base/--monimoi στη γραμμή εντολών.
-DATA_DIR = Path(os.environ.get("ANAP_DATA", r"C:\Users\thoma\Teachers\anaplhrwtes"))
+DATA_DIR = Path(__file__).parent / "data"
 
 # Προαιρετικοί υποφάκελοι. Αν δεν υπάρχουν, χρησιμοποιείται ο DATA_DIR.
 PINAKES_SUBDIR = "pinakes"    # πίνακες κατάταξης αναπληρωτών (ανά κλάδο)
