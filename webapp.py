@@ -636,6 +636,25 @@ HOME_TEMPLATE = """
   </div>
   {% endif %}
 </div>
+{% if map_ctx %}
+<div class="card">
+  <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:4px;">
+    🏫 Σχολικές μονάδες — Πανελλήνιο Σχολικό Δίκτυο (maps.sch.gr)
+  </div>
+  <div class="hint" style="margin-bottom:8px;">
+    Χρησιμοποίησε την αναζήτηση μέσα στον χάρτη (δήμος / διεύθυνση εκπαίδευσης / τύπος μονάδας) για
+    να δεις σχολεία στη «{{ map_ctx.nomos }}».
+  </div>
+  <div style="border-radius:8px; overflow:hidden; border:1px solid var(--line);">
+    <iframe src="https://maps.sch.gr/main.html" style="width:100%; height:480px; border:0; display:block;"
+            loading="lazy" title="Χάρτης σχολικών μονάδων ΠΣΔ"></iframe>
+  </div>
+  <a href="https://maps.sch.gr/main.html" target="_blank" rel="noopener"
+     style="display:inline-block; margin-top:8px; font-size:12px; color:var(--brass);">
+    Άνοιγμα σε νέα καρτέλα ↗
+  </a>
+</div>
+{% endif %}
 <div style="margin-top:22px;"></div>
 {% if avg_dates %}
 <div class="card">
