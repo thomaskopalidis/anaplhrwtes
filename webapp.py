@@ -307,6 +307,8 @@ SHELL_TEMPLATE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }} · Πίνακες Αναπληρωτών</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%8B%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <style>
   :root {
     --ink: #16233B; --paper: #EEF2F6; --card: #FFFFFF;
@@ -526,6 +528,43 @@ SHELL_TEMPLATE = """<!doctype html>
       }, 1500);
     });
   }
+
+  // --- Χάρτης νομού: πραγματικό περίγραμμα από OpenStreetMap (Nominatim),
+  // με χρωματισμό. Αν δεν βρεθεί περίγραμμα (άγνωστο όνομα στο OSM, ή
+  // πρόβλημα δικτύου), πέφτει πίσω σε απλό pin πάνω στην πρωτεύουσα — ποτέ
+  // δεν αφήνει τον χάρτη άδειο/σπασμένο.
+  function loadNomosMap(elId, query, fallbackLat, fallbackLng) {
+    var map = L.map(elId, { scrollWheelZoom: false }).setView([fallbackLat, fallbackLng], 9);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap contributors", maxZoom: 18,
+    }).addTo(map);
+
+    function fallbackMarker() {
+      L.marker([fallbackLat, fallbackLng]).addTo(map);
+    }
+
+    var url = "https://nominatim.openstreetmap.org/search?format=json&polygon_geojson=1&limit=1&q="
+      + encodeURIComponent(query);
+    fetch(url, { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (data) {
+        if (data && data.length && data[0].geojson) {
+          var layer = L.geoJSON(data[0].geojson, {
+            style: { color: "#B98A3D", weight: 2, fillColor: "#B98A3D", fillOpacity: 0.28 },
+          }).addTo(map);
+          try {
+            map.fitBounds(layer.getBounds(), { padding: [12, 12] });
+          } catch (e) {
+            fallbackMarker();
+          }
+        } else {
+          fallbackMarker();
+        }
+      })
+      .catch(function () {
+        fallbackMarker();
+      });
+  }
 </script>
 </body>
 </html>"""
@@ -553,33 +592,51 @@ HOME_TEMPLATE = """
   {% if last_update %}<br>🕓 Τελευταία ενημέρωση δεδομένων: <strong>{{ last_update }}</strong>{% endif %}
 </p>
 {% if error %}<div class="error-banner">⚠️ {{ error }}</div>{% endif %}
-<div class="card">
-  <form method="post">
-    <div class="row">
-      <div class="field">
-        <label for="klados">Κλάδος (ΠΕ)</label>
-        <input list="klados-list" id="klados" name="klados" type="text"
-               value="{{ form.klados }}" placeholder="π.χ. ΠΕ06" required>
-        {{ klados_datalist|safe }}
+<div style="display:flex; gap:20px; flex-wrap:wrap; align-items:stretch;">
+  <div class="card" style="flex:1 1 380px; margin-bottom:0;">
+    <form method="post">
+      <div class="row">
+        <div class="field">
+          <label for="klados">Κλάδος (ΠΕ)</label>
+          <input list="klados-list" id="klados" name="klados" type="text"
+                 value="{{ form.klados }}" placeholder="π.χ. ΠΕ06" required>
+          {{ klados_datalist|safe }}
+        </div>
+        <div class="field">
+          <label for="region">Τοποθεσία-στόχος</label>
+          <input id="region" name="region" type="text" value="{{ form.region }}"
+                 placeholder="π.χ. Α' ΕΒΡΟΥ" required>
+        </div>
+        <div class="field">
+          <label for="moria">Μόρια</label>
+          <input id="moria" name="moria" type="text" value="{{ form.moria }}"
+                 placeholder="π.χ. 50.8" required>
+        </div>
       </div>
-      <div class="field">
-        <label for="region">Τοποθεσία-στόχος</label>
-        <input id="region" name="region" type="text" value="{{ form.region }}"
-               placeholder="π.χ. Α' ΕΒΡΟΥ" required>
+      <div class="checkline">
+        <input type="checkbox" id="subcodes" name="subcodes" {{ 'checked' if form.subcodes }}>
+        <label for="subcodes">Να περιλαμβάνει υποκλάδους (π.χ. ΠΕ11.01)</label>
       </div>
-      <div class="field">
-        <label for="moria">Μόρια</label>
-        <input id="moria" name="moria" type="text" value="{{ form.moria }}"
-               placeholder="π.χ. 50.8" required>
-      </div>
+      <button class="run" type="submit">Έλεγχος</button>
+    </form>
+  </div>
+  {% if map_ctx %}
+  <div class="card" style="flex:1 1 380px; margin-bottom:0;">
+    <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:4px;">
+      🗺️ Νομός {{ map_ctx.nomos }} — πρωτεύουσα: {{ map_ctx.capital }}
     </div>
-    <div class="checkline">
-      <input type="checkbox" id="subcodes" name="subcodes" {{ 'checked' if form.subcodes }}>
-      <label for="subcodes">Να περιλαμβάνει υποκλάδους (π.χ. ΠΕ11.01)</label>
-    </div>
-    <button class="run" type="submit">Έλεγχος</button>
-  </form>
+    <div id="nomos-map" style="height:266px; border-radius:8px; overflow:hidden; border:1px solid var(--line);"></div>
+    <a href="{{ map_ctx.link_url }}" target="_blank" rel="noopener"
+       style="display:inline-block; margin-top:8px; font-size:12px; color:var(--brass);">
+      Άνοιγμα σε μεγαλύτερο χάρτη ↗
+    </a>
+    <script>
+      loadNomosMap("nomos-map", {{ map_ctx.query|tojson }}, {{ map_ctx.lat }}, {{ map_ctx.lng }});
+    </script>
+  </div>
+  {% endif %}
 </div>
+<div style="margin-top:22px;"></div>
 {% if avg_dates %}
 <div class="card">
   <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:10px;">
@@ -621,21 +678,6 @@ HOME_TEMPLATE = """
 {% if verdict %}
 <div class="verdict-banner {{ 'verdict-ok' if verdict.ok else 'verdict-no' }}">
   <span style="font-size:22px;">{{ '✅' if verdict.ok else '❌' }}</span> {{ verdict.text }}
-</div>
-{% endif %}
-{% if map_ctx %}
-<div class="card">
-  <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:4px;">
-    🗺️ Νομός {{ map_ctx.nomos }} — πρωτεύουσα: {{ map_ctx.capital }}
-  </div>
-  <div style="border-radius:8px; overflow:hidden; border:1px solid var(--line);">
-    <iframe src="{{ map_ctx.embed_url }}" style="width:100%; height:320px; border:0; display:block;"
-            loading="lazy" title="Χάρτης νομού {{ map_ctx.nomos }}"></iframe>
-  </div>
-  <a href="{{ map_ctx.link_url }}" target="_blank" rel="noopener"
-     style="display:inline-block; margin-top:8px; font-size:12px; color:var(--brass);">
-    Άνοιγμα σε μεγαλύτερο χάρτη ↗
-  </a>
 </div>
 {% endif %}
 {% if output %}
@@ -802,7 +844,8 @@ def home():
     if nomos_info:
         map_ctx = {
             "nomos": nomos_name.capitalize(), "capital": nomos_info["πρωτεύουσα"],
-            "embed_url": _osm_embed_url(nomos_info["lat"], nomos_info["lng"]),
+            "query": f"Νομός {nomos_name.capitalize()}, Ελλάδα",
+            "lat": nomos_info["lat"], "lng": nomos_info["lng"],
             "link_url": _osm_link(nomos_info["lat"], nomos_info["lng"]),
         }
 
