@@ -609,9 +609,18 @@ SHELL_TEMPLATE = """<!doctype html>
         // 3 διαδοχικές διατυπώσεις ανά δήμο/νησί — κάποιες φορές μόνο μία
         // από τις τρεις ταιριάζει σωστά στο OpenStreetMap.
         var dimosAttempts = ["Δήμος " + dimos, dimos, "νησί " + dimos];
+        var retried = false;
         function tryDimosAttempt(j) {
           if (j >= dimosAttempts.length) {
-            setTimeout(nextDimos, 300);
+            if (!retried) {
+              // Μία πλήρης επανάληψη όλης της ακολουθίας, μετά από λίγο —
+              // καλύπτει παροδικά προβλήματα δικτύου/ρυθμού στο δωρεάν
+              // Nominatim, όχι μόνο "δεν βρέθηκε καθόλου".
+              retried = true;
+              setTimeout(function () { tryDimosAttempt(0); }, 900);
+            } else {
+              setTimeout(nextDimos, 300);
+            }
             return;
           }
           searchPlace(dimosAttempts[j]).then(function (result) {
