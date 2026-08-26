@@ -747,23 +747,6 @@ HOME_TEMPLATE = """
     </div>
     {% endif %}
 
-    {% if verdict %}
-    <div class="verdict-banner {{ 'verdict-ok' if verdict.ok else 'verdict-no' }}">
-      <span style="font-size:22px;">{{ '✅' if verdict.ok else '❌' }}</span> {{ verdict.text }}
-    </div>
-    {% endif %}
-    {% if output %}
-    <div class="slip">
-      <div class="slip-head">
-        <span>Αποτέλεσμα ελέγχου</span>
-        <span style="display:flex; align-items:center; gap:10px;">
-          <button type="button" class="copy-btn" onclick="copyResult(this)">📋 Αντιγραφή</button>
-          <span class="tag">{{ form.klados }}</span>
-        </span>
-      </div>
-      <pre>{{ output }}</pre>
-    </div>
-    {% endif %}
   </div>
 
   <!-- Δεξιά στήλη: γενικές πληροφορίες -->
@@ -811,6 +794,24 @@ HOME_TEMPLATE = """
   </div>
 
 </div>
+
+{% if verdict %}
+<div class="verdict-banner {{ 'verdict-ok' if verdict.ok else 'verdict-no' }}">
+  <span style="font-size:22px;">{{ '✅' if verdict.ok else '❌' }}</span> {{ verdict.text }}
+</div>
+{% endif %}
+{% if output %}
+<div class="slip">
+  <div class="slip-head">
+    <span>Αποτέλεσμα ελέγχου</span>
+    <span style="display:flex; align-items:center; gap:10px;">
+      <button type="button" class="copy-btn" onclick="copyResult(this)">📋 Αντιγραφή</button>
+      <span class="tag">{{ form.klados }}</span>
+    </span>
+  </div>
+  <pre>{{ output }}</pre>
+</div>
+{% endif %}
 """
 
 
