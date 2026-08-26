@@ -570,9 +570,29 @@ SHELL_TEMPLATE = """<!doctype html>
         .catch(function () { return null; });
     }
 
+    // Σαν το searchBoundary, αλλά επιστρέφει ΚΑΙ το σημείο (lat/lon) του
+    // αποτελέσματος, όχι μόνο το πολύγωνο — το Nominatim δίνει πάντα ένα
+    // σημείο, ακόμα κι όταν δεν έχει πλήρες περίγραμμα για πολύ μικρά νησιά.
+    function searchPlace(query) {
+      var url = "https://nominatim.openstreetmap.org/search?format=json&polygon_geojson=1"
+        + "&limit=1&countrycodes=gr&q=" + encodeURIComponent(query);
+      return fetch(url, { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (data) {
+          if (!data || !data.length) return null;
+          var item = data[0];
+          var geom = item.geojson && (item.geojson.type === "Polygon" || item.geojson.type === "MultiPolygon")
+            ? item.geojson : null;
+          return { lat: parseFloat(item.lat), lng: parseFloat(item.lon), geom: geom };
+        })
+        .catch(function () { return null; });
+    }
+
     // ΠΕΡΙΣΣΟΤΕΡΟΙ ΑΠΟ ΕΝΑΣ δήμοι μέσα σε "νησί" (π.χ. Δ' Δωδεκανήσου = 11
-    // ξεχωριστά νησιά μαζί): ψάξε ΚΑΘΕ δήμο ξεχωριστά, χρωμάτισε όσους
-    // βρεθούν, και τέλος ζούμαρε ώστε να χωράνε όλοι μαζί. Σειριακά (όχι όλα
+    // ξεχωριστά νησιά μαζί): ψάξε ΚΑΘΕ δήμο ξεχωριστά. Σε κάθε επιτυχία,
+    // βάλε ένα μικρό μπλε σημαδάκι στο ίδιο το νησί (πάντα, έστω κι αν δεν
+    // βρεθεί πλήρες περίγραμμα) ΚΑΙ χρωμάτισε το περίγραμμα αν υπάρχει.
+    // Στο τέλος ζούμαρε ώστε να χωράνε όλα μαζί. Σειριακά (όχι όλα
     // ταυτόχρονα) για να μην «βομβαρδίζουμε» το δωρεάν Nominatim.
     if (dimoi && dimoi.length > 1) {
       var combinedBounds = null;
@@ -594,14 +614,22 @@ SHELL_TEMPLATE = """<!doctype html>
             setTimeout(nextDimos, 300);
             return;
           }
-          searchBoundary(dimosAttempts[j]).then(function (geom) {
-            if (geom) {
-              var layer = L.geoJSON(geom, { style: boundaryStyle }).addTo(map);
-              combinedBounds = combinedBounds ? combinedBounds.extend(layer.getBounds()) : layer.getBounds();
-              setTimeout(nextDimos, 300);
-            } else {
+          searchPlace(dimosAttempts[j]).then(function (result) {
+            if (!result) {
               tryDimosAttempt(j + 1);
+              return;
             }
+            // Μικρό μπλε σημαδάκι πάνω στο ίδιο το νησί, με το όνομά του.
+            L.circleMarker([result.lat, result.lng], {
+              radius: 5, color: "#1D4ED8", weight: 1.5, fillColor: "#3B82F6", fillOpacity: 0.85,
+            }).addTo(map).bindTooltip(dimos, { direction: "top" });
+            var b = L.latLngBounds([result.lat, result.lng], [result.lat, result.lng]);
+            if (result.geom) {
+              var layer = L.geoJSON(result.geom, { style: boundaryStyle }).addTo(map);
+              b = layer.getBounds();
+            }
+            combinedBounds = combinedBounds ? combinedBounds.extend(b) : b;
+            setTimeout(nextDimos, 300);
           });
         }
         tryDimosAttempt(0);
