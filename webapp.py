@@ -682,13 +682,22 @@ SHELL_TEMPLATE = """<!doctype html>
     // διατάξεις), το ξαναϋπολογίζει μετά από μια στιγμή.
     setTimeout(function () { map.invalidateSize(); }, 200);
 
-    var tooltip = kind === "island" ? "Νησί" : kind === "district" ? "Περιοχή μετάθεσης" : "Πρωτεύουσα νομού";
-    // Μπλε κουκκίδα πάνω στο σημείο — πάντα ορατή, είτε βρεθεί περίγραμμα είτε όχι.
-    // bindTooltip = εμφανίζεται περνώντας το ποντίκι· bindPopup = εμφανίζεται
-    // με κλικ/άγγιγμα (δουλεύει και σε κινητό, όπου δεν υπάρχει "πέρασμα ποντικιού").
-    var mainMarker = L.circleMarker([fallbackLat, fallbackLng], {
-      radius: 7, color: "#1D4ED8", weight: 2, fillColor: "#3B82F6", fillOpacity: 0.9,
-    }).addTo(map).bindTooltip(tooltip, { direction: "top" }).bindPopup(placeName);
+    var boundaryStyle = { color: "#B98A3D", weight: 2, fillColor: "#B98A3D", fillOpacity: 0.28 };
+
+    // ΠΕΡΙΣΣΟΤΕΡΟΙ ΑΠΟ ΕΝΑΣ δήμοι (π.χ. Δ' Δωδεκανήσου = πολλά ξεχωριστά
+    // νησιά μαζί): ΔΕΝ βάζουμε τη γενική κουκκίδα της "περιοχής" — θα έπεφτε
+    // σε κάποιο τυχαίο σημείο ανάμεσα στα νησιά, πιθανόν πάνω σε ΕΝΑ από αυτά
+    // (μπερδεύοντας το κλικ εκεί, αφού θα έδειχνε ασαφή ετικέτα "Νησί" αντί
+    // για το πραγματικό όνομα). Κάθε νησί παίρνει τη ΔΙΚΗ του ακριβή κουκκίδα
+    // παρακάτω, οπότε η γενική δεν προσφέρει τίποτα.
+    if (!(dimoi && dimoi.length > 1)) {
+      var tooltip = kind === "island" ? "Νησί" : kind === "district" ? "Περιοχή μετάθεσης" : "Πρωτεύουσα νομού";
+      // bindTooltip = εμφανίζεται περνώντας το ποντίκι· bindPopup = εμφανίζεται
+      // με κλικ/άγγιγμα (δουλεύει και σε κινητό, όπου δεν υπάρχει "πέρασμα ποντικιού").
+      var mainMarker = L.circleMarker([fallbackLat, fallbackLng], {
+        radius: 7, color: "#1D4ED8", weight: 2, fillColor: "#3B82F6", fillOpacity: 0.9,
+      }).addTo(map).bindTooltip(tooltip, { direction: "top" }).bindPopup(placeName);
+    }
 
     // Οι "περιοχές μετάθεσης" (συνδυασμοί πολλών δήμων, π.χ. "Α' Αθήνας") δεν
     // αντιστοιχούν σε πραγματική διοικητική μονάδα στο OpenStreetMap — δεν
@@ -697,7 +706,6 @@ SHELL_TEMPLATE = """<!doctype html>
       return;
     }
 
-    var boundaryStyle = { color: "#B98A3D", weight: 2, fillColor: "#B98A3D", fillOpacity: 0.28 };
 
     function searchBoundary(query) {
       var url = "https://nominatim.openstreetmap.org/search?format=json&polygon_geojson=1"
@@ -735,6 +743,17 @@ SHELL_TEMPLATE = """<!doctype html>
     // βρεθεί πλήρες περίγραμμα) ΚΑΙ χρωμάτισε το περίγραμμα αν υπάρχει.
     // Στο τέλος ζούμαρε ώστε να χωράνε όλα μαζί. Σειριακά (όχι όλα
     // ταυτόχρονα) για να μην «βομβαρδίζουμε» το δωρεάν Nominatim.
+
+    // Για μερικά νησιά η αναζήτηση OpenStreetMap έχει αποδειχτεί αναξιόπιστη
+    // (λάθος ταίριασμα, π.χ. Πάτμος <-> Αρκοί μπερδεμένα). Για αυτά,
+    // χρησιμοποιούμε χειροκίνητα επιβεβαιωμένες συντεταγμένες για ΣΙΓΟΥΡΗ
+    // τοποθέτηση της κουκκίδας — η αναζήτηση περιγράμματος γίνεται ΕΠΙΠΛΕΟΝ,
+    // προαιρετικά, χωρίς να επηρεάζει πού μπαίνει η ίδια η κουκκίδα.
+    var KNOWN_ISLAND_COORDS = {
+      "ΠΑΤΜΟΥ": [37.3047, 26.5478],
+      "ΑΡΚΟΙ": [37.3833, 26.7333],
+    };
+
     if (dimoi && dimoi.length > 1) {
       var combinedBounds = null;
       var idx = 0;
@@ -747,6 +766,25 @@ SHELL_TEMPLATE = """<!doctype html>
         }
         var dimos = dimoi[idx];
         idx += 1;
+
+        var known = KNOWN_ISLAND_COORDS[dimos];
+        if (known) {
+          var kb = L.latLngBounds(known, known);
+          var kMarker = L.circleMarker(known, {
+            radius: 5, color: "#1D4ED8", weight: 1.5, fillColor: "#3B82F6", fillOpacity: 0.85,
+          }).addTo(map).bindTooltip(dimos, { direction: "top" }).bindPopup(dimos);
+          combinedBounds = combinedBounds ? combinedBounds.extend(kb) : kb;
+          searchBoundary("Δήμος " + dimos).then(function (geom) {
+            if (geom) {
+              var layer = L.geoJSON(geom, { style: boundaryStyle }).addTo(map);
+              combinedBounds = combinedBounds.extend(layer.getBounds());
+              kMarker.bringToFront();
+            }
+            setTimeout(nextDimos, 300);
+          });
+          return;
+        }
+
         // 3 διαδοχικές διατυπώσεις ανά δήμο/νησί — κάποιες φορές μόνο μία
         // από τις τρεις ταιριάζει σωστά στο OpenStreetMap.
         var dimosAttempts = ["Δήμος " + dimos, dimos, "νησί " + dimos];
