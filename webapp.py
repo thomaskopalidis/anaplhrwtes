@@ -545,9 +545,11 @@ SHELL_TEMPLATE = """<!doctype html>
 
     var tooltip = kind === "island" ? "Νησί" : kind === "district" ? "Περιοχή μετάθεσης" : "Πρωτεύουσα νομού";
     // Μπλε κουκκίδα πάνω στο σημείο — πάντα ορατή, είτε βρεθεί περίγραμμα είτε όχι.
+    // bindTooltip = εμφανίζεται περνώντας το ποντίκι· bindPopup = εμφανίζεται
+    // με κλικ/άγγιγμα (δουλεύει και σε κινητό, όπου δεν υπάρχει "πέρασμα ποντικιού").
     L.circleMarker([fallbackLat, fallbackLng], {
       radius: 7, color: "#1D4ED8", weight: 2, fillColor: "#3B82F6", fillOpacity: 0.9,
-    }).addTo(map).bindTooltip(tooltip, { direction: "top" });
+    }).addTo(map).bindTooltip(tooltip, { direction: "top" }).bindPopup(placeName);
 
     // Οι "περιοχές μετάθεσης" (συνδυασμοί πολλών δήμων, π.χ. "Α' Αθήνας") δεν
     // αντιστοιχούν σε πραγματική διοικητική μονάδα στο OpenStreetMap — δεν
@@ -631,7 +633,7 @@ SHELL_TEMPLATE = """<!doctype html>
             // Μικρό μπλε σημαδάκι πάνω στο ίδιο το νησί, με το όνομά του.
             L.circleMarker([result.lat, result.lng], {
               radius: 5, color: "#1D4ED8", weight: 1.5, fillColor: "#3B82F6", fillOpacity: 0.85,
-            }).addTo(map).bindTooltip(dimos, { direction: "top" });
+            }).addTo(map).bindTooltip(dimos, { direction: "top" }).bindPopup(dimos);
             var b = L.latLngBounds([result.lat, result.lng], [result.lat, result.lng]);
             if (result.geom) {
               var layer = L.geoJSON(result.geom, { style: boundaryStyle }).addTo(map);
@@ -830,6 +832,33 @@ HOME_TEMPLATE = """
       {% endfor %}
     </div>
     {% endif %}
+    <div class="card">
+      <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:10px;">
+        📊 Δευτεροβάθμια Γενική Εκπαίδευση — Γυμνάσια 2023/2024 (ΕΛΣΤΑΤ)
+      </div>
+      <img src="{{ url_for('static', filename='dt_gymnasia_2023_2024.png') }}"
+           alt="Στατιστικά ΕΛΣΤΑΤ: Γυμνάσια 2023/2024"
+           style="width:100%; border-radius:8px; border:1px solid var(--line); display:block;">
+      <div class="hint" style="margin-top:8px;">Πηγή: Ελληνική Στατιστική Αρχή</div>
+    </div>
+    <div class="card">
+      <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:10px;">
+        📊 Πρωτοβάθμια Εκπαίδευση — Νηπιαγωγεία &amp; Δημοτικά 2022/2023 (ΕΛΣΤΑΤ)
+      </div>
+      <img src="{{ url_for('static', filename='dt_nipiagogia_dimotika_2022_2023.png') }}"
+           alt="Στατιστικά ΕΛΣΤΑΤ: Νηπιαγωγεία και Δημοτικά 2022/2023"
+           style="width:100%; border-radius:8px; border:1px solid var(--line); display:block;">
+      <div class="hint" style="margin-top:8px;">Πηγή: Ελληνική Στατιστική Αρχή</div>
+    </div>
+    <div class="card">
+      <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:10px;">
+        📊 Δευτεροβάθμια Γενική Εκπαίδευση — Γενικά Λύκεια 2021/2022 (ΕΛΣΤΑΤ)
+      </div>
+      <img src="{{ url_for('static', filename='dt_lykeia_2021_2022.png') }}"
+           alt="Στατιστικά ΕΛΣΤΑΤ: Γενικά Λύκεια 2021/2022"
+           style="width:100%; border-radius:8px; border:1px solid var(--line); display:block;">
+      <div class="hint" style="margin-top:8px;">Πηγή: Ελληνική Στατιστική Αρχή</div>
+    </div>
   </div>
 
 </div>
