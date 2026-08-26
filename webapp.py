@@ -533,7 +533,7 @@ SHELL_TEMPLATE = """<!doctype html>
   // με χρωματισμό. Αν δεν βρεθεί περίγραμμα (άγνωστο όνομα στο OSM, ή
   // πρόβλημα δικτύου), πέφτει πίσω σε απλό pin πάνω στην πρωτεύουσα — ποτέ
   // δεν αφήνει τον χάρτη άδειο/σπασμένο.
-  function loadNomosMap(elId, placeName, fallbackLat, fallbackLng, kind) {
+  function loadNomosMap(elId, placeName, fallbackLat, fallbackLng, kind, dimoi) {
     var map = L.map(elId, { scrollWheelZoom: false }).setView([fallbackLat, fallbackLng], 9);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "© OpenStreetMap contributors", maxZoom: 18,
@@ -556,37 +556,78 @@ SHELL_TEMPLATE = """<!doctype html>
       return;
     }
 
-    // Δοκιμάζουμε πολλές διατυπώσεις με τη σειρά — το OpenStreetMap δεν ονομάζει
-    // πάντα τα ίδια πράγματα με τον ίδιο τρόπο. Σταματάμε στην πρώτη που
-    // επιστρέψει πραγματικό περίγραμμα (Polygon/MultiPolygon), όχι απλά σημείο.
-    var attempts = kind === "island"
-      ? ["νησί " + placeName, placeName]
-      : ["Περιφερειακή Ενότητα " + placeName, "Νομός " + placeName, placeName];
+    var boundaryStyle = { color: "#B98A3D", weight: 2, fillColor: "#B98A3D", fillOpacity: 0.28 };
+
+    function searchBoundary(query) {
+      var url = "https://nominatim.openstreetmap.org/search?format=json&polygon_geojson=1"
+        + "&limit=1&countrycodes=gr&q=" + encodeURIComponent(query);
+      return fetch(url, { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (data) {
+          var geom = data && data.length ? data[0].geojson : null;
+          return geom && (geom.type === "Polygon" || geom.type === "MultiPolygon") ? geom : null;
+        })
+        .catch(function () { return null; });
+    }
+
+    // ΠΕΡΙΣΣΟΤΕΡΟΙ ΑΠΟ ΕΝΑΣ δήμοι μέσα σε "νησί" (π.χ. Δ' Δωδεκανήσου = 11
+    // ξεχωριστά νησιά μαζί): ψάξε ΚΑΘΕ δήμο ξεχωριστά, χρωμάτισε όσους
+    // βρεθούν, και τέλος ζούμαρε ώστε να χωράνε όλοι μαζί. Σειριακά (όχι όλα
+    // ταυτόχρονα) για να μην «βομβαρδίζουμε» το δωρεάν Nominatim.
+    if (dimoi && dimoi.length > 1) {
+      var combinedBounds = null;
+      var idx = 0;
+      function nextDimos() {
+        if (idx >= dimoi.length) {
+          if (combinedBounds) {
+            try { map.fitBounds(combinedBounds, { padding: [12, 12] }); } catch (e) {}
+          }
+          return;
+        }
+        var dimos = dimoi[idx];
+        idx += 1;
+        searchBoundary("Δήμος " + dimos).then(function (geom) {
+          if (geom) {
+            var layer = L.geoJSON(geom, { style: boundaryStyle }).addTo(map);
+            combinedBounds = combinedBounds ? combinedBounds.extend(layer.getBounds()) : layer.getBounds();
+          }
+          setTimeout(nextDimos, 300);
+        });
+      }
+      nextDimos();
+      return;
+    }
+
+    // Ένας δήμος/νησί: δοκιμάζουμε πρώτα το ακριβές όνομα δήμου (πιο
+    // αξιόπιστο — π.χ. "Δήμος Καλυμνίων" αντί για σκέτο "Κάλυμνος", που
+    // μπορεί να ταιριάξει λάθος με μικρή γειτονική νησίδα), μετά γενικότερες
+    // διατυπώσεις. Σταματάμε στην πρώτη που πετύχει.
+    var attempts = [];
+    if (dimoi && dimoi.length === 1) {
+      attempts.push("Δήμος " + dimoi[0]);
+    }
+    if (kind === "island") {
+      attempts.push("νησί " + placeName, placeName);
+    } else {
+      attempts.push("Περιφερειακή Ενότητα " + placeName, "Νομός " + placeName, placeName);
+    }
 
     function tryAttempt(i) {
       if (i >= attempts.length) {
         return;  // η κουκκίδα υπάρχει ήδη — απλά δεν βρέθηκε περίγραμμα να χρωματίσουμε
       }
-      var url = "https://nominatim.openstreetmap.org/search?format=json&polygon_geojson=1"
-        + "&limit=1&countrycodes=gr&q=" + encodeURIComponent(attempts[i]);
-      fetch(url, { headers: { Accept: "application/json" } })
-        .then(function (r) { return r.ok ? r.json() : []; })
-        .then(function (data) {
-          var geom = data && data.length ? data[0].geojson : null;
-          if (geom && (geom.type === "Polygon" || geom.type === "MultiPolygon")) {
-            var layer = L.geoJSON(geom, {
-              style: { color: "#B98A3D", weight: 2, fillColor: "#B98A3D", fillOpacity: 0.28 },
-            }).addTo(map);
-            try {
-              map.fitBounds(layer.getBounds(), { padding: [12, 12] });
-            } catch (e) {
-              tryAttempt(i + 1);
-            }
-          } else {
+      searchBoundary(attempts[i]).then(function (geom) {
+        if (geom) {
+          var layer = L.geoJSON(geom, { style: boundaryStyle }).addTo(map);
+          try {
+            map.fitBounds(layer.getBounds(), { padding: [12, 12] });
+          } catch (e) {
             tryAttempt(i + 1);
           }
-        })
-        .catch(function () { tryAttempt(i + 1); });
+        } else {
+          tryAttempt(i + 1);
+        }
+      });
     }
     tryAttempt(0);
   }
@@ -672,7 +713,7 @@ HOME_TEMPLATE = """
       <script>
         window.addEventListener("DOMContentLoaded", function () {
           loadNomosMap("nomos-map", {{ map_ctx.search_name|tojson }}, {{ map_ctx.lat }}, {{ map_ctx.lng }},
-                       {{ map_ctx.kind|tojson }});
+                       {{ map_ctx.kind|tojson }}, {{ map_ctx.dimoi|tojson }});
         });
       </script>
     </div>
