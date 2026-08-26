@@ -24,11 +24,15 @@ from __future__ import annotations
 
 import builtins
 import io
+import json
+import os
 import re
 import threading
 import time
 import traceback
 import unicodedata
+import urllib.error
+import urllib.request
 import webbrowser
 from contextlib import contextmanager, redirect_stdout
 from types import SimpleNamespace
@@ -440,6 +444,58 @@ SHELL_TEMPLATE = """<!doctype html>
     font-size: 12.5px; cursor: pointer; text-align: left; transition: background .15s;
   }
   .theme-toggle-btn:hover { background: rgba(255,255,255,.12); }
+  .eduai-fab {
+    position: fixed; bottom: 22px; right: 22px; z-index: 40;
+    background: var(--brass); color: #fff; border: none; padding: 12px 18px;
+    border-radius: 999px; font-size: 14px; font-weight: 600; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,.22); transition: background .15s, transform .15s;
+  }
+  .eduai-fab:hover { background: var(--brass-dark); transform: translateY(-1px); }
+  .eduai-panel {
+    display: none; flex-direction: column; position: fixed; bottom: 78px; right: 22px; z-index: 41;
+    width: 340px; max-width: calc(100vw - 32px); height: 440px; max-height: calc(100vh - 120px);
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 10px 34px rgba(0,0,0,.28); overflow: hidden;
+  }
+  .eduai-panel.open { display: flex; }
+  .eduai-header {
+    background: var(--ink); color: #fff; padding: 12px 16px; font-weight: 700; font-size: 14px;
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+  }
+  .eduai-close {
+    background: none; border: none; color: #C9D2DE; font-size: 15px; cursor: pointer; padding: 2px 6px;
+  }
+  .eduai-close:hover { color: #fff; }
+  .eduai-messages {
+    flex: 1; overflow-y: auto; padding: 14px 14px 6px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .eduai-msg {
+    max-width: 85%; padding: 9px 12px; border-radius: 10px; font-size: 13.5px; line-height: 1.45;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .eduai-msg-assistant {
+    align-self: flex-start; background: var(--paper); color: var(--ink); border: 1px solid var(--line);
+  }
+  .eduai-msg-user { align-self: flex-end; background: var(--brass); color: #fff; }
+  .eduai-msg.eduai-thinking { opacity: .6; font-style: italic; }
+  .eduai-input-row {
+    display: flex; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); flex-shrink: 0;
+  }
+  .eduai-input-row input {
+    flex: 1; padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px;
+    font-size: 13.5px; background: var(--input-bg); color: var(--ink);
+  }
+  .eduai-input-row input:focus { outline: 2px solid var(--brass); outline-offset: 1px; }
+  .eduai-send-btn {
+    background: var(--brass); color: #fff; border: none; width: 38px; border-radius: 7px;
+    font-size: 15px; cursor: pointer; flex-shrink: 0;
+  }
+  .eduai-send-btn:hover { background: var(--brass-dark); }
+  .eduai-send-btn:disabled { opacity: .6; cursor: default; }
+  @media (max-width: 480px) {
+    .eduai-panel { right: 16px; bottom: 74px; width: calc(100vw - 32px); }
+    .eduai-fab { right: 16px; bottom: 16px; }
+  }
   button.run:disabled { opacity: .75; cursor: default; }
   .loading-dots span {
     display: inline-block; opacity: 0; animation: loadingBlink 1.2s infinite;
@@ -478,6 +534,20 @@ SHELL_TEMPLATE = """<!doctype html>
     {{ body|safe }}
   </main>
 </div>
+
+<button type="button" id="eduai-toggle" class="eduai-fab" title="Ρώτα το eduAI">💬 eduAI</button>
+<div id="eduai-panel" class="eduai-panel">
+  <div class="eduai-header">
+    <span>🤖 eduAI</span>
+    <button type="button" id="eduai-close" class="eduai-close" aria-label="Κλείσιμο">✕</button>
+  </div>
+  <div id="eduai-messages" class="eduai-messages"></div>
+  <div class="eduai-input-row">
+    <input id="eduai-input" type="text" placeholder="Ρώτησέ με κάτι..." autocomplete="off">
+    <button type="button" id="eduai-send" class="eduai-send-btn">➤</button>
+  </div>
+</div>
+
 <script>
   // --- Σκοτεινό θέμα, με απομνημόνευση επιλογής ---
   (function () {
@@ -529,6 +599,75 @@ SHELL_TEMPLATE = """<!doctype html>
     });
   }
 
+  // --- eduAI: μικρός βοηθός συνομιλίας, ορατός σε όλες τις σελίδες ---
+  (function () {
+    var toggle = document.getElementById("eduai-toggle");
+    var panel = document.getElementById("eduai-panel");
+    var closeBtn = document.getElementById("eduai-close");
+    var messagesEl = document.getElementById("eduai-messages");
+    var input = document.getElementById("eduai-input");
+    var sendBtn = document.getElementById("eduai-send");
+    var history = [];
+
+    function addMessage(role, text) {
+      var div = document.createElement("div");
+      div.className = "eduai-msg eduai-msg-" + role;
+      div.textContent = text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return div;
+    }
+
+    toggle.addEventListener("click", function () {
+      var isOpen = panel.classList.contains("open");
+      panel.classList.toggle("open", !isOpen);
+      if (!isOpen) {
+        if (!messagesEl.children.length) {
+          addMessage("assistant", "Γεια σου! Είμαι το eduAI. Ρώτησέ με για μόρια, φάσεις, ή πώς να χρησιμοποιήσεις την εφαρμογή.");
+        }
+        input.focus();
+      }
+    });
+    closeBtn.addEventListener("click", function () { panel.classList.remove("open"); });
+
+    function send() {
+      var text = input.value.trim();
+      if (!text) return;
+      addMessage("user", text);
+      input.value = "";
+      sendBtn.disabled = true;
+      var thinking = addMessage("assistant", "...");
+      thinking.classList.add("eduai-thinking");
+
+      fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, history: history }),
+      })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (res) {
+          thinking.remove();
+          if (!res.ok || res.data.error) {
+            addMessage("assistant", "⚠️ " + (res.data.error || "Κάτι πήγε στραβά."));
+            return;
+          }
+          addMessage("assistant", res.data.reply);
+          history.push({ role: "user", content: text });
+          history.push({ role: "assistant", content: res.data.reply });
+        })
+        .catch(function () {
+          thinking.remove();
+          addMessage("assistant", "⚠️ Πρόβλημα σύνδεσης — δοκίμασε ξανά.");
+        })
+        .finally(function () { sendBtn.disabled = false; });
+    }
+
+    sendBtn.addEventListener("click", send);
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") send();
+    });
+  })();
+
   // --- Χάρτης νομού: πραγματικό περίγραμμα από OpenStreetMap (Nominatim),
   // με χρωματισμό. Αν δεν βρεθεί περίγραμμα (άγνωστο όνομα στο OSM, ή
   // πρόβλημα δικτύου), πέφτει πίσω σε απλό pin πάνω στην πρωτεύουσα — ποτέ
@@ -547,7 +686,7 @@ SHELL_TEMPLATE = """<!doctype html>
     // Μπλε κουκκίδα πάνω στο σημείο — πάντα ορατή, είτε βρεθεί περίγραμμα είτε όχι.
     // bindTooltip = εμφανίζεται περνώντας το ποντίκι· bindPopup = εμφανίζεται
     // με κλικ/άγγιγμα (δουλεύει και σε κινητό, όπου δεν υπάρχει "πέρασμα ποντικιού").
-    L.circleMarker([fallbackLat, fallbackLng], {
+    var mainMarker = L.circleMarker([fallbackLat, fallbackLng], {
       radius: 7, color: "#1D4ED8", weight: 2, fillColor: "#3B82F6", fillOpacity: 0.9,
     }).addTo(map).bindTooltip(tooltip, { direction: "top" }).bindPopup(placeName);
 
@@ -630,15 +769,18 @@ SHELL_TEMPLATE = """<!doctype html>
               tryDimosAttempt(j + 1);
               return;
             }
-            // Μικρό μπλε σημαδάκι πάνω στο ίδιο το νησί, με το όνομά του.
-            L.circleMarker([result.lat, result.lng], {
-              radius: 5, color: "#1D4ED8", weight: 1.5, fillColor: "#3B82F6", fillOpacity: 0.85,
-            }).addTo(map).bindTooltip(dimos, { direction: "top" }).bindPopup(dimos);
             var b = L.latLngBounds([result.lat, result.lng], [result.lat, result.lng]);
             if (result.geom) {
               var layer = L.geoJSON(result.geom, { style: boundaryStyle }).addTo(map);
               b = layer.getBounds();
             }
+            // Μικρό μπλε σημαδάκι πάνω στο ίδιο το νησί, με το όνομά του —
+            // προστίθεται ΜΕΤΑ το περίγραμμα και φέρνεται μπροστά, ώστε να
+            // ΜΗΝ κρύβεται ποτέ από το χρωματισμένο πολύγωνο.
+            var marker = L.circleMarker([result.lat, result.lng], {
+              radius: 5, color: "#1D4ED8", weight: 1.5, fillColor: "#3B82F6", fillOpacity: 0.85,
+            }).addTo(map).bindTooltip(dimos, { direction: "top" }).bindPopup(dimos);
+            marker.bringToFront();
             combinedBounds = combinedBounds ? combinedBounds.extend(b) : b;
             setTimeout(nextDimos, 300);
           });
@@ -670,6 +812,7 @@ SHELL_TEMPLATE = """<!doctype html>
       searchBoundary(attempts[i]).then(function (geom) {
         if (geom) {
           var layer = L.geoJSON(geom, { style: boundaryStyle }).addTo(map);
+          mainMarker.bringToFront();
           try {
             map.fitBounds(layer.getBounds(), { padding: [12, 12] });
           } catch (e) {
@@ -1480,6 +1623,111 @@ def download_file(filename):
     if out_dir != target.parent or not target.exists():
         abort(404)
     return send_from_directory(out_dir, filename, as_attachment=True)
+
+
+# ---------------------------------------------------------------------------
+# eduAI — μικρός βοηθός AI (xAI/Grok). Το κλειδί API διαβάζεται ΜΟΝΟ από τη
+# μεταβλητή περιβάλλοντος XAI_API_KEY — ΠΟΤΕ δεν γράφεται εδώ. Χωρίς αυτήν, η
+# διαδρομή απαντάει ευγενικά ότι δεν έχει ρυθμιστεί, χωρίς να ρίχνει τον server.
+XAI_API_KEY = os.environ.get("XAI_API_KEY", "")
+XAI_MODEL = "grok-4.3"  # δες docs.x.ai για ενημερωμένη λίστα/τιμές αν αλλάξει
+
+_EDUAI_SYSTEM_BASE = (
+    "Είσαι το eduAI, ένας σύντομος βοηθός μέσα σε μια ανεπίσημη εφαρμογή ελέγχου "
+    "πινάκων κατάταξης αναπληρωτών εκπαιδευτικών στην Ελλάδα (κλάδοι ΠΕ, μόρια, "
+    "φάσεις πρόσληψης, περιοχές διορισμού). Βοηθάς τους επισκέπτες να καταλάβουν "
+    "πώς λειτουργεί η εφαρμογή και τι σημαίνουν οι όροι. Απαντάς ΣΥΝΤΟΜΑ (2-5 "
+    "προτάσεις συνήθως) και καθαρά, στα ελληνικά. ΔΕΝ είσαι επίσημη πηγή — για "
+    "νομικά/επίσημα θέματα παραπέμπεις σε ΑΣΕΠ/Υπουργείο Παιδείας. Δεν γνωρίζεις "
+    "προσωπικά στοιχεία συγκεκριμένων υποψηφίων. Οι καρτέλες της εφαρμογής είναι: "
+    "Γρήγορος έλεγχος, Πλήρης Ανάλυση, Σύνοψη Κλάδου, Βάση Φάσης, Αναβαθμίσεις, "
+    "Αρχεία αποτελεσμάτων."
+)
+
+
+def _eduai_system_prompt() -> str:
+    """Το system prompt, εμπλουτισμένο δυναμικά με την τρέχουσα μοριοδότηση από
+    το moriodotisi.json — έτσι το eduAI απαντάει με τα ΠΡΑΓΜΑΤΙΚΑ, ενημερωμένα
+    νούμερα της εφαρμογής, όχι με ό,τι θυμάται από γενική εκπαίδευση."""
+    prompt = _EDUAI_SYSTEM_BASE
+    try:
+        groups = _load_moriodotisi()
+        if groups:
+            lines = ["\n\nΤρέχουσα μοριοδότηση (για αναφορά, χρησιμοποίησέ τα αν ρωτηθείς):"]
+            for g in groups:
+                lines.append(f"- {g.get('τίτλος', '')}:")
+                for item in g.get("κατηγορίες", []):
+                    lines.append(f"    {item.get('κατηγορία', '')}: {item.get('μόρια', '')} "
+                                 f"({item.get('μονάδα', '')})")
+            prompt += "\n".join(lines)
+    except Exception:                                                 # noqa: BLE001
+        pass
+    return prompt
+
+
+# Απλό rate-limit ανά IP στη μνήμη της διεργασίας — προστασία από κατάχρηση σε
+# δημόσια, πληρωμένη ανά χρήση υπηρεσία. Καθαρίζεται αυτόματα (παλιά ίχνη
+# αγνοούνται/αντικαθίστανται) — δεν χρειάζεται ξεχωριστό cleanup thread.
+_CHAT_RATE_LIMIT_MAX = 20
+_CHAT_RATE_LIMIT_WINDOW = 600  # 10 λεπτά
+_chat_rate_hits: dict = {}
+
+
+def _chat_rate_ok(ip: str) -> bool:
+    now = time.time()
+    hits = [t for t in _chat_rate_hits.get(ip, []) if now - t < _CHAT_RATE_LIMIT_WINDOW]
+    if len(hits) >= _CHAT_RATE_LIMIT_MAX:
+        _chat_rate_hits[ip] = hits
+        return False
+    hits.append(now)
+    _chat_rate_hits[ip] = hits
+    return True
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    if not XAI_API_KEY:
+        return {"error": "Το eduAI δεν έχει ρυθμιστεί ακόμα σε αυτόν τον server "
+                          "(λείπει το κλειδί API)."}, 503
+
+    ip = request.remote_addr or "unknown"
+    if not _chat_rate_ok(ip):
+        return {"error": "Πάρα πολλά μηνύματα από εσένα σε λίγη ώρα — δοκίμασε ξανά σε λίγα λεπτά."}, 429
+
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message") or "").strip()
+    history = data.get("history") or []
+    if not message:
+        return {"error": "Λείπει το μήνυμα."}, 400
+    if len(message) > 2000:
+        return {"error": "Πολύ μεγάλο μήνυμα (μέγιστο 2000 χαρακτήρες)."}, 400
+
+    messages = [{"role": "system", "content": _eduai_system_prompt()}]
+    if isinstance(history, list):
+        for h in history[-8:]:                                        # μόνο τα τελευταία λίγα
+            if not isinstance(h, dict):
+                continue
+            role, content = h.get("role"), h.get("content")
+            if role in ("user", "assistant") and isinstance(content, str) and content.strip():
+                messages.append({"role": role, "content": content[:2000]})
+    messages.append({"role": "user", "content": message})
+
+    payload = json.dumps({
+        "model": XAI_MODEL, "messages": messages, "max_tokens": 500, "temperature": 0.5,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.x.ai/v1/chat/completions", data=payload, method="POST",
+        headers={"Authorization": f"Bearer {XAI_API_KEY}", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+        reply = (result.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+        return {"reply": reply or "Δεν έλαβα απάντηση — δοκίμασε ξανά."}
+    except urllib.error.HTTPError as exc:
+        return {"error": f"Σφάλμα από το eduAI (κωδικός {exc.code}). Δοκίμασε ξανά σε λίγο."}, 502
+    except Exception:                                                  # noqa: BLE001
+        return {"error": "Κάτι πήγε στραβά με το eduAI. Δοκίμασε ξανά σε λίγο."}, 502
 
 
 # ---------------------------------------------------------------------------
