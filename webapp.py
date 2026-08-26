@@ -586,23 +586,25 @@ SHELL_TEMPLATE = """<!doctype html>
         }
         var dimos = dimoi[idx];
         idx += 1;
-        searchBoundary("Δήμος " + dimos).then(function (geom) {
-          if (geom) {
-            var layer = L.geoJSON(geom, { style: boundaryStyle }).addTo(map);
-            combinedBounds = combinedBounds ? combinedBounds.extend(layer.getBounds()) : layer.getBounds();
+        // 3 διαδοχικές διατυπώσεις ανά δήμο/νησί — κάποιες φορές μόνο μία
+        // από τις τρεις ταιριάζει σωστά στο OpenStreetMap.
+        var dimosAttempts = ["Δήμος " + dimos, dimos, "νησί " + dimos];
+        function tryDimosAttempt(j) {
+          if (j >= dimosAttempts.length) {
             setTimeout(nextDimos, 300);
-          } else {
-            // 2η προσπάθεια: σκέτο το όνομα, χωρίς "Δήμος" (μερικές φορές
-            // ταιριάζει καλύτερα στο OpenStreetMap).
-            searchBoundary(dimos).then(function (geom2) {
-              if (geom2) {
-                var layer2 = L.geoJSON(geom2, { style: boundaryStyle }).addTo(map);
-                combinedBounds = combinedBounds ? combinedBounds.extend(layer2.getBounds()) : layer2.getBounds();
-              }
-              setTimeout(nextDimos, 300);
-            });
+            return;
           }
-        });
+          searchBoundary(dimosAttempts[j]).then(function (geom) {
+            if (geom) {
+              var layer = L.geoJSON(geom, { style: boundaryStyle }).addTo(map);
+              combinedBounds = combinedBounds ? combinedBounds.extend(layer.getBounds()) : layer.getBounds();
+              setTimeout(nextDimos, 300);
+            } else {
+              tryDimosAttempt(j + 1);
+            }
+          });
+        }
+        tryDimosAttempt(0);
       }
       nextDimos();
       return;
