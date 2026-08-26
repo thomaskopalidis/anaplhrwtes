@@ -533,7 +533,7 @@ SHELL_TEMPLATE = """<!doctype html>
   // με χρωματισμό. Αν δεν βρεθεί περίγραμμα (άγνωστο όνομα στο OSM, ή
   // πρόβλημα δικτύου), πέφτει πίσω σε απλό pin πάνω στην πρωτεύουσα — ποτέ
   // δεν αφήνει τον χάρτη άδειο/σπασμένο.
-  function loadNomosMap(elId, nomosName, fallbackLat, fallbackLng) {
+  function loadNomosMap(elId, placeName, fallbackLat, fallbackLng, kind) {
     var map = L.map(elId, { scrollWheelZoom: false }).setView([fallbackLat, fallbackLng], 9);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "© OpenStreetMap contributors", maxZoom: 18,
@@ -543,22 +543,25 @@ SHELL_TEMPLATE = """<!doctype html>
     // διατάξεις), το ξαναϋπολογίζει μετά από μια στιγμή.
     setTimeout(function () { map.invalidateSize(); }, 200);
 
-    // Μπλε κουκκίδα πάνω στην πρωτεύουσα — πάντα ορατή, είτε βρεθεί περίγραμμα
-    // νομού είτε όχι.
+    var tooltip = kind === "island" ? "Νησί" : kind === "district" ? "Περιοχή μετάθεσης" : "Πρωτεύουσα νομού";
+    // Μπλε κουκκίδα πάνω στο σημείο — πάντα ορατή, είτε βρεθεί περίγραμμα είτε όχι.
     L.circleMarker([fallbackLat, fallbackLng], {
       radius: 7, color: "#1D4ED8", weight: 2, fillColor: "#3B82F6", fillOpacity: 0.9,
-    }).addTo(map).bindTooltip("Πρωτεύουσα νομού", { direction: "top" });
+    }).addTo(map).bindTooltip(tooltip, { direction: "top" });
 
-    // Δοκιμάζουμε πολλές διατυπώσεις με τη σειρά, γιατί το OpenStreetMap δεν
-    // ονομάζει πάντα τους νομούς με τον ίδιο τρόπο (παλιά "Νομός Χ" έναντι
-    // επίσημης σημερινής "Περιφερειακή Ενότητα Χ" κ.λπ.). Σταματάμε στην
-    // πρώτη που επιστρέψει πραγματικό περίγραμμα (Polygon/MultiPolygon), όχι
-    // απλά ένα σημείο.
-    var attempts = [
-      "Περιφερειακή Ενότητα " + nomosName,
-      "Νομός " + nomosName,
-      nomosName,
-    ];
+    // Οι "περιοχές μετάθεσης" (συνδυασμοί πολλών δήμων, π.χ. "Α' Αθήνας") δεν
+    // αντιστοιχούν σε πραγματική διοικητική μονάδα στο OpenStreetMap — δεν
+    // έχει νόημα να ψάξουμε περίγραμμα, μόνο η κουκκίδα αρκεί.
+    if (kind === "district") {
+      return;
+    }
+
+    // Δοκιμάζουμε πολλές διατυπώσεις με τη σειρά — το OpenStreetMap δεν ονομάζει
+    // πάντα τα ίδια πράγματα με τον ίδιο τρόπο. Σταματάμε στην πρώτη που
+    // επιστρέψει πραγματικό περίγραμμα (Polygon/MultiPolygon), όχι απλά σημείο.
+    var attempts = kind === "island"
+      ? ["νησί " + placeName, placeName]
+      : ["Περιφερειακή Ενότητα " + placeName, "Νομός " + placeName, placeName];
 
     function tryAttempt(i) {
       if (i >= attempts.length) {
@@ -650,8 +653,17 @@ HOME_TEMPLATE = """
     {% if map_ctx %}
     <div class="card">
       <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:4px;">
+        {% if map_ctx.kind == 'island' %}
+        🏝️ Νησί: {{ map_ctx.nomos }}
+        {% elif map_ctx.kind == 'district' %}
+        📍 Περιοχή μετάθεσης: {{ map_ctx.nomos }}
+        {% else %}
         🗺️ Νομός {{ map_ctx.nomos }} — πρωτεύουσα: {{ map_ctx.capital }}
+        {% endif %}
       </div>
+      {% if map_ctx.dimoi %}
+      <div class="hint" style="margin-bottom:8px;">Δήμοι: {{ map_ctx.dimoi|join(', ') }}</div>
+      {% endif %}
       <div id="nomos-map" style="height:380px; border-radius:8px; overflow:hidden; border:1px solid var(--line);"></div>
       <a href="{{ map_ctx.link_url }}" target="_blank" rel="noopener"
          style="display:inline-block; margin-top:8px; font-size:12px; color:var(--brass);">
@@ -659,7 +671,8 @@ HOME_TEMPLATE = """
       </a>
       <script>
         window.addEventListener("DOMContentLoaded", function () {
-          loadNomosMap("nomos-map", {{ map_ctx.nomos|tojson }}, {{ map_ctx.lat }}, {{ map_ctx.lng }});
+          loadNomosMap("nomos-map", {{ map_ctx.search_name|tojson }}, {{ map_ctx.lat }}, {{ map_ctx.lng }},
+                       {{ map_ctx.kind|tojson }});
         });
       </script>
     </div>
@@ -765,6 +778,7 @@ NOMOI = {
     "ΔΡΑΜΑΣ": {"πρωτεύουσα": "Δράμα", "lat": 41.1524, "lng": 24.1477},
     "ΣΕΡΡΩΝ": {"πρωτεύουσα": "Σέρρες", "lat": 41.0864, "lng": 23.5486},
     "ΚΙΛΚΙΣ": {"πρωτεύουσα": "Κιλκίς", "lat": 40.9950, "lng": 22.8756},
+    "ΧΑΛΚΙΔΙΚΗΣ": {"πρωτεύουσα": "Πολύγυρος", "lat": 40.3750, "lng": 23.4444},
     "ΠΕΛΛΑΣ": {"πρωτεύουσα": "Έδεσσα", "lat": 40.7999, "lng": 22.0463},
     "ΗΜΑΘΙΑΣ": {"πρωτεύουσα": "Βέροια", "lat": 40.5233, "lng": 22.2019},
     "ΠΙΕΡΙΑΣ": {"πρωτεύουσα": "Κατερίνη", "lat": 40.2700, "lng": 22.5031},
@@ -785,7 +799,7 @@ NOMOI = {
     "ΚΕΦΑΛΛΗΝΙΑΣ": {"πρωτεύουσα": "Αργοστόλι", "lat": 38.1755, "lng": 20.4880},
     "ΖΑΚΥΝΘΟΥ": {"πρωτεύουσα": "Ζάκυνθος", "lat": 37.7870, "lng": 20.8993},
     "ΑΙΤΩΛΟΑΚΑΡΝΑΝΙΑΣ": {"πρωτεύουσα": "Μεσολόγγι", "lat": 38.3712, "lng": 21.4283},
-    "ΑΧΑΪΑΣ": {"πρωτεύουσα": "Πάτρα", "lat": 38.2466, "lng": 21.7346},
+    "ΑΧΑΙΑΣ": {"πρωτεύουσα": "Πάτρα", "lat": 38.2466, "lng": 21.7346},
     "ΗΛΕΙΑΣ": {"πρωτεύουσα": "Πύργος", "lat": 37.6706, "lng": 21.4428},
     "ΒΟΙΩΤΙΑΣ": {"πρωτεύουσα": "Λιβαδειά", "lat": 38.4360, "lng": 22.8757},
     "ΕΥΒΟΙΑΣ": {"πρωτεύουσα": "Χαλκίδα", "lat": 38.4638, "lng": 23.5959},
@@ -798,7 +812,7 @@ NOMOI = {
     "ΛΑΚΩΝΙΑΣ": {"πρωτεύουσα": "Σπάρτη", "lat": 37.0745, "lng": 22.4318},
     "ΜΕΣΣΗΝΙΑΣ": {"πρωτεύουσα": "Καλαμάτα", "lat": 37.0389, "lng": 22.1142},
     "ΧΑΝΙΩΝ": {"πρωτεύουσα": "Χανιά", "lat": 35.5138, "lng": 24.0180},
-    "ΡΕΘΥΜΝΗΣ": {"πρωτεύουσα": "Ρέθυμνο", "lat": 35.3667, "lng": 24.4833},
+    "ΡΕΘΥΜΝΟΥ": {"πρωτεύουσα": "Ρέθυμνο", "lat": 35.3667, "lng": 24.4833},
     "ΗΡΑΚΛΕΙΟΥ": {"πρωτεύουσα": "Ηράκλειο", "lat": 35.3387, "lng": 25.1442},
     "ΛΑΣΙΘΙΟΥ": {"πρωτεύουσα": "Άγιος Νικόλαος", "lat": 35.1892, "lng": 25.7189},
     "ΔΩΔΕΚΑΝΗΣΟΥ": {"πρωτεύουσα": "Ρόδος", "lat": 36.4341, "lng": 28.2176},
@@ -814,6 +828,33 @@ NOMOI_ALIASES = {
     "ΘΕΣΣΑΛΟΝΙΚΗ": "ΘΕΣΣΑΛΟΝΙΚΗΣ",
 }
 
+# Ζητούμενο: κάποιες "περιοχές διορισμού" με πρόθεμα (π.χ. "Β' ΕΒΡΟΥ") ΔΕΝ
+# αναφέρονται στην ίδια την ηπειρωτική έδρα του νομού, αλλά σε συγκεκριμένο
+# μικρό νησί που ανήκει διοικητικά εκεί (π.χ. Β' ΕΒΡΟΥ = Σαμοθράκη, όχι
+# Αλεξανδρούπολη). Κλειδί: (πρόθεμα, βασικός_νομός) -> στοιχεία νησιού. Αυτές
+# οι εξαιρέσεις υπερισχύουν του γενικού κανόνα όταν ταιριάζουν.
+_subregions_cache = {"value": None, "ts": 0.0}
+
+
+def _load_subregions() -> dict:
+    """Φορτώνει το data/subregions.json (υποπεριοχές μετάθεσης ανά νομό), αν
+    υπάρχει. Επιστρέφει {} αν λείπει το αρχείο ή έχει πρόβλημα."""
+    now = time.monotonic()
+    if _subregions_cache["value"] is not None and now - _subregions_cache["ts"] < _CACHE_TTL:
+        return _subregions_cache["value"]
+    result = {}
+    path = core.CFG.DATA_DIR / "subregions.json"
+    if path.exists():
+        try:
+            import json
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            result = {k: v for k, v in data.items() if not k.startswith("_")}
+        except Exception:                                            # noqa: BLE001
+            result = {}
+    _subregions_cache["value"], _subregions_cache["ts"] = result, now
+    return result
+
 
 def _strip_greek_accents(s: str) -> str:
     """Αφαιρεί τόνους (π.χ. 'ΘΕΣΣΑΛΟΝΊΚΗΣ' -> 'ΘΕΣΣΑΛΟΝΙΚΗΣ') — το .upper() στα
@@ -822,31 +863,75 @@ def _strip_greek_accents(s: str) -> str:
     return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
 
 
-def _match_nomos(location_text: str):
-    """Προσπαθεί να αναγνωρίσει σε ποιον νομό αναφέρεται μια 'περιοχή
-    διορισμού' (π.χ. "Α' ΕΒΡΟΥ", "Δ' ΚΥΚΛΑΔΩΝ (Δ.Ε.)"). Επιστρέφει
-    (όνομα_νομού, στοιχεία) ή (None, None) αν δεν αναγνωριστεί με σιγουριά."""
-    if not location_text:
-        return None, None
+def _split_prefix(location_text: str):
+    """"Β' ΕΒΡΟΥ" -> ("Β", "ΕΒΡΟΥ (υπόλοιπο, πριν αφαιρεθούν παρενθέσεις/επιθέματα)")."""
     s = _strip_greek_accents(location_text.strip().upper())
-    s = re.sub(r"^[ΑΒΓΔΕΖΗ]['΄]\s*", "", s)          # αρχικό Α'/Β'/Γ'... αν υπάρχει
-    s = re.sub(r"\([^)]*\)", "", s)                    # (Δ.Ε.), (Π.Ε.) κ.λπ.
-    s = re.sub(r"[-–].*$", "", s)                       # "- ΜΕΙΩΜΕΝΟΥ ΩΡΑΡΙΟΥ" κ.λπ.
-    s = s.strip()
-    if not s:
-        return None, None
-    if s in NOMOI:
-        return s, NOMOI[s]
-    if s in NOMOI_ALIASES:
-        key = NOMOI_ALIASES[s]
-        return key, NOMOI[key]
+    m = re.match(r"^([ΑΒΓΔΕΖΗ])['΄]\s*(.*)$", s)
+    if m:
+        return m.group(1), m.group(2)
+    return None, s
+
+
+def _clean_core(s: str) -> str:
+    s = re.sub(r"\([^)]*\)", "", s)      # (Δ.Ε.), (Π.Ε.) κ.λπ.
+    s = re.sub(r"[-–].*$", "", s)         # "- ΜΕΙΩΜΕΝΟΥ ΩΡΑΡΙΟΥ" κ.λπ.
+    return s.strip()
+
+
+def _find_nomos_key(core_text: str):
+    """Επιστρέφει το κανονικό όνομα νομού (κλειδί του NOMOI) που ταιριάζει
+    καλύτερα στο core_text, ή None. Ελέγχει ΠΡΩΤΑ ειδικές πολυλεκτικές
+    περιοχές (π.χ. 'ΑΝΑΤΟΛΙΚΗΣ ΑΤΤΙΚΗΣ') πριν το γενικό substring-match στο
+    NOMOI — αλλιώς το 'ΑΝΑΤ. ΑΤΤΙΚΗΣ' θα ταίριαζε λανθασμένα στο απλό
+    'ΑΤΤΙΚΗΣ' (αφού το δεύτερο είναι substring του πρώτου)."""
+    if "ΑΝΑΤ" in core_text and "ΑΤΤΙΚ" in core_text:
+        return "ΑΝΑΤΟΛΙΚΗΣ ΑΤΤΙΚΗΣ"
+    if core_text in NOMOI:
+        return core_text
+    if core_text in NOMOI_ALIASES:
+        return NOMOI_ALIASES[core_text]
     for key in NOMOI:
-        if key in s or s in key:
-            return key, NOMOI[key]
+        if key in core_text or core_text in key:
+            return key
     for alias, key in NOMOI_ALIASES.items():
-        if alias in s or s in alias:
-            return key, NOMOI[key]
-    return None, None
+        if alias in core_text or core_text in alias:
+            return key
+    return None
+
+
+def _match_location(location_text: str):
+    """Αναγνωρίζει μια 'περιοχή διορισμού' — είτε ως ειδική υποπεριοχή
+    (νησί ή απλά ξεχωριστή περιοχή μετάθεσης, από το subregions.json,
+    υπερισχύει), είτε αλλιώς ως γενικό νομό. Επιστρέφει dict {name, capital,
+    lat, lng, kind, search_name} όπου kind είναι 'island' / 'district' /
+    'nomos', ή None αν δεν αναγνωριστεί με σιγουριά."""
+    if not location_text:
+        return None
+    prefix, rest = _split_prefix(location_text)
+    core_text = _clean_core(rest)
+    if not core_text:
+        return None
+    nomos_key = _find_nomos_key(core_text)
+
+    if prefix and nomos_key:
+        sub = _load_subregions().get(nomos_key, {}).get(prefix)
+        if sub:
+            return {
+                "name": sub["ετικέτα"], "capital": sub["ετικέτα"],
+                "lat": sub["lat"], "lng": sub["lng"],
+                "kind": "island" if sub.get("νησί") else "district",
+                "search_name": sub["ετικέτα"].split("(")[0].strip(),
+                "δήμοι": sub.get("δήμοι", []),
+            }
+
+    if nomos_key and nomos_key in NOMOI:
+        info = NOMOI[nomos_key]
+        return {
+            "name": nomos_key.capitalize(), "capital": info["πρωτεύουσα"],
+            "lat": info["lat"], "lng": info["lng"],
+            "kind": "nomos", "search_name": nomos_key.capitalize(), "δήμοι": [],
+        }
+    return None
 
 
 def _osm_embed_url(lat: float, lng: float, span: float = 0.55) -> str:
@@ -898,14 +983,15 @@ def home():
                                         moria=moria, name=None, subcodes=form["subcodes"])
                 output = _run_capture(core.cmd_predict, args)
 
-    nomos_name, nomos_info = _match_nomos(form["region"]) if form["region"] else (None, None)
+    loc = _match_location(form["region"]) if form["region"] else None
     map_ctx = None
-    if nomos_info:
+    if loc:
         map_ctx = {
-            "nomos": nomos_name.capitalize(), "capital": nomos_info["πρωτεύουσα"],
-            "lat": nomos_info["lat"], "lng": nomos_info["lng"],
-            "link_url": _osm_link(nomos_info["lat"], nomos_info["lng"]),
-            "sch_url": _sch_embed_url(nomos_info["lat"], nomos_info["lng"]),
+            "nomos": loc["name"], "capital": loc["capital"], "kind": loc["kind"],
+            "search_name": loc["search_name"], "dimoi": loc.get("δήμοι") or [],
+            "lat": loc["lat"], "lng": loc["lng"],
+            "link_url": _osm_link(loc["lat"], loc["lng"]),
+            "sch_url": _sch_embed_url(loc["lat"], loc["lng"]),
         }
 
     return render_page(
