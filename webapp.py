@@ -752,6 +752,7 @@ SHELL_TEMPLATE = """<!doctype html>
     var KNOWN_ISLAND_COORDS = {
       "ΠΑΤΜΟΥ": [37.3047, 26.5478],
       "ΑΡΚΟΙ": [37.3833, 26.7333],
+      "ΛΕΡΟΥ": [37.1500, 26.8500],
     };
 
     if (dimoi && dimoi.length > 1) {
