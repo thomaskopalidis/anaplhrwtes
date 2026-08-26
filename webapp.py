@@ -809,29 +809,6 @@ HOME_TEMPLATE = """
       </table>
     </div>
     {% endif %}
-    {% if moriodotisi %}
-    <div class="card">
-      <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:12px;">
-        📐 Μοριοδότηση ανά κατηγορία
-      </div>
-      {% for group in moriodotisi %}
-      <div style="font-size:11px; font-weight:700; color:var(--brass); text-transform:uppercase;
-                  letter-spacing:.03em; margin:14px 0 4px;">{{ group.τίτλος }}</div>
-      <table style="width:100%; border-collapse:collapse; font-size:13px;">
-        {% for item in group.κατηγορίες %}
-        <tr>
-          <td style="padding:6px 0 2px;">{{ item.κατηγορία }}</td>
-        </tr>
-        <tr style="border-bottom:1px solid var(--line);">
-          <td style="padding:0 0 7px; text-align:right; font-weight:600; color:var(--muted-dark);">
-            {{ item.μόρια }} μόρια <span style="opacity:.65; font-weight:400;">({{ item.μονάδα }})</span>
-          </td>
-        </tr>
-        {% endfor %}
-      </table>
-      {% endfor %}
-    </div>
-    {% endif %}
     <div class="card">
       <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:10px;">
         📊 Δευτεροβάθμια Γενική Εκπαίδευση — Γυμνάσια 2023/2024 (ΕΛΣΤΑΤ)
@@ -859,6 +836,29 @@ HOME_TEMPLATE = """
            style="width:100%; border-radius:8px; border:1px solid var(--line); display:block;">
       <div class="hint" style="margin-top:8px;">Πηγή: Ελληνική Στατιστική Αρχή</div>
     </div>
+    {% if moriodotisi %}
+    <div class="card">
+      <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:12px;">
+        📐 Μοριοδότηση ανά κατηγορία
+      </div>
+      {% for group in moriodotisi %}
+      <div style="font-size:11px; font-weight:700; color:var(--brass); text-transform:uppercase;
+                  letter-spacing:.03em; margin:14px 0 4px;">{{ group.τίτλος }}</div>
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        {% for item in group.κατηγορίες %}
+        <tr>
+          <td style="padding:6px 0 2px;">{{ item.κατηγορία }}</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--line);">
+          <td style="padding:0 0 7px; text-align:right; font-weight:600; color:var(--muted-dark);">
+            {{ item.μόρια }} μόρια <span style="opacity:.65; font-weight:400;">({{ item.μονάδα }})</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
 
 </div>
