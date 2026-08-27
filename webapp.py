@@ -276,6 +276,29 @@ def _load_mistho_klimakia() -> list:
     return result
 
 
+_epidomata_cache = {"value": None, "ts": 0.0}
+
+
+def _load_epidomata() -> list:
+    """Φορτώνει το data/epidomata.json (λοιπά επιδόματα — οικογενειακό κ.λπ.),
+    αν υπάρχει. Επιστρέφει [] αν λείπει το αρχείο ή έχει πρόβλημα."""
+    now = time.monotonic()
+    if _epidomata_cache["value"] is not None and now - _epidomata_cache["ts"] < _CACHE_TTL:
+        return _epidomata_cache["value"]
+    result = []
+    path = core.CFG.DATA_DIR / "epidomata.json"
+    if path.exists():
+        try:
+            import json
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            result = data.get("επιδόματα", [])
+        except Exception:                                            # noqa: BLE001
+            result = []
+    _epidomata_cache["value"], _epidomata_cache["ts"] = result, now
+    return result
+
+
 _paramethorios_cache = {"value": None, "ts": 0.0}
 
 
@@ -1162,8 +1185,9 @@ HOME_TEMPLATE = """
         {% endfor %}
       </table>
       <div class="hint" style="margin-top:8px;">
-        * Τα παραπάνω ποσά συμπεριλαμβάνουν το επίδομα παραμεθορίου, όπου ισχύει. Το επίδομα (100€ μεικτά)
-        ισχύει είτε προσληφθείς με <strong>ΠΛΗΡΕΣ</strong> είτε με <strong>ΜΕΙΩΜΕΝΟ</strong> ωράριο.
+        * Τα παραπάνω ποσά συμπεριλαμβάνουν το επίδομα παραμεθορίου, όπου ισχύει:
+        <strong>ΠΛΗΡΕΣ</strong> ωράριο → 100€ μεικτά (περίπου 60€ καθαρά) ·
+        <strong>ΜΕΙΩΜΕΝΟ</strong> ωράριο → 50€ μεικτά (περίπου 30€ καθαρά).
       </div>
       {% if paramethorios %}
       <div style="margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); font-size:12.5px; line-height:1.5;">
@@ -1180,6 +1204,21 @@ HOME_TEMPLATE = """
         {% endif %}
       </div>
       {% endif %}
+    </div>
+    {% endif %}
+    {% if epidomata %}
+    <div class="card">
+      <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:12px;">
+        👨‍👩‍👧 Λοιπά επιδόματα (καθαρό ποσό/μήνα)
+      </div>
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        {% for e in epidomata %}
+        <tr style="border-bottom:1px solid var(--line);">
+          <td style="padding:7px 4px;">{{ e.περιγραφή }}</td>
+          <td style="padding:7px 4px; text-align:right; font-weight:600; white-space:nowrap;">{{ '%.2f'|format(e.καθαρό_ποσό) }} €</td>
+        </tr>
+        {% endfor %}
+      </table>
     </div>
     {% endif %}
   </div>
@@ -1494,6 +1533,7 @@ def home():
         last_update=_last_data_update(),
         moriodotisi=_load_moriodotisi(),
         mistho_klimakia=_load_mistho_klimakia(),
+        epidomata=_load_epidomata(),
         paramethorios=paramethorios,
         map_ctx=map_ctx,
     )
