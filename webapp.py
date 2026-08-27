@@ -2072,10 +2072,11 @@ SCHOOLS_TEMPLATE = """
   }
 
   function selectNomos(name, colorOf) {
+    var ownColor = colorOf[name] || "#B98A3D";
     nomosLayer.eachLayer(function (layer) {
       var n = layer.feature.properties.name_greek.trim();
       if (n === name) {
-        layer.setStyle({ fillColor: "#B98A3D", fillOpacity: 0.22, color: "#8F6A2C", weight: 3 });
+        layer.setStyle({ fillColor: ownColor, fillOpacity: 0.28, color: ownColor, weight: 3 });
         layer.bringToFront();
         map.fitBounds(layer.getBounds(), { padding: [24, 24] });
       } else {
