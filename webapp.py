@@ -253,6 +253,75 @@ def _load_moriodotisi() -> list:
     return result
 
 
+_mistho_cache = {"value": None, "ts": 0.0}
+
+
+def _load_mistho_klimakia() -> list:
+    """Φορτώνει το data/mistho_klimakia.json (μισθολογικά κλιμάκια), αν
+    υπάρχει. Επιστρέφει [] αν λείπει το αρχείο ή έχει πρόβλημα."""
+    now = time.monotonic()
+    if _mistho_cache["value"] is not None and now - _mistho_cache["ts"] < _CACHE_TTL:
+        return _mistho_cache["value"]
+    result = []
+    path = core.CFG.DATA_DIR / "mistho_klimakia.json"
+    if path.exists():
+        try:
+            import json
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            result = data.get("κλιμάκια", [])
+        except Exception:                                            # noqa: BLE001
+            result = []
+    _mistho_cache["value"], _mistho_cache["ts"] = result, now
+    return result
+
+
+_paramethorios_cache = {"value": None, "ts": 0.0}
+
+
+def _load_paramethorios() -> dict:
+    """Φορτώνει το data/paramethorios.json (λίστα παραμεθόριων/προβληματικών
+    περιοχών κατηγορίας Α), αν υπάρχει."""
+    now = time.monotonic()
+    if _paramethorios_cache["value"] is not None and now - _paramethorios_cache["ts"] < _CACHE_TTL:
+        return _paramethorios_cache["value"]
+    result = {"πλήρως": [], "υποπεριοχές": {}, "μερικώς": {}}
+    path = core.CFG.DATA_DIR / "paramethorios.json"
+    if path.exists():
+        try:
+            import json
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            result = {
+                "πλήρως": data.get("πλήρως_παραμεθόριοι_νομοί", []),
+                "υποπεριοχές": data.get("παραμεθόριες_υποπεριοχές", {}),
+                "μερικώς": data.get("μερικώς_παραμεθόριοι_νομοί", {}),
+            }
+        except Exception:                                            # noqa: BLE001
+            pass
+    _paramethorios_cache["value"], _paramethorios_cache["ts"] = result, now
+    return result
+
+
+def _check_paramethorios(nomos_key: str, prefix):
+    """Επιστρέφει dict {status: 'yes'/'no'/'partial', detail: ...} για το αν
+    ο νομός/υποπεριοχή δικαιούται επίδομα παραμεθορίου, βάσει του
+    paramethorios.json. status='partial' σημαίνει ότι ΜΕΡΟΣ του νομού
+    δικαιούται αλλά η εφαρμογή δεν ξέρει αν η συγκεκριμένη περιοχή είναι
+    μέσα σε αυτό το μέρος — χρειάζεται χειροκίνητος έλεγχος."""
+    if not nomos_key:
+        return {"status": "no", "detail": None}
+    data = _load_paramethorios()
+    if nomos_key in data["πλήρως"]:
+        return {"status": "yes", "detail": None}
+    subs = data["υποπεριοχές"].get(nomos_key, [])
+    if prefix and prefix in subs:
+        return {"status": "yes", "detail": None}
+    if nomos_key in data["μερικώς"]:
+        return {"status": "partial", "detail": data["μερικώς"][nomos_key]}
+    return {"status": "no", "detail": None}
+
+
 _ACADEMIC_MONTH_ORDER = {9: 0, 10: 1, 11: 2, 12: 3, 1: 4, 2: 5, 3: 6,
                          4: 7, 5: 8, 6: 9, 7: 10, 8: 11}
 _ACADEMIC_MONTH_NAMES = {
@@ -1073,6 +1142,46 @@ HOME_TEMPLATE = """
       {% endfor %}
     </div>
     {% endif %}
+    {% if mistho_klimakia %}
+    <div class="card">
+      <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:12px;">
+        💰 Μισθολογικά κλιμάκια αναπληρωτών (καθαρό ποσό/μήνα)
+      </div>
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        <tr style="border-bottom:2px solid var(--brass);">
+          <td style="padding:5px 4px; font-weight:700; font-size:10.5px; text-transform:uppercase; color:var(--muted);">Κλιμάκιο</td>
+          <td style="padding:5px 4px; font-weight:700; font-size:10.5px; text-transform:uppercase; color:var(--muted);">Έτη προϋπηρεσίας</td>
+          <td style="padding:5px 4px; font-weight:700; font-size:10.5px; text-transform:uppercase; color:var(--muted); text-align:right;">Καθαρό ποσό</td>
+        </tr>
+        {% for k in mistho_klimakia %}
+        <tr style="border-bottom:1px solid var(--line);">
+          <td style="padding:6px 4px;">{{ k.κλιμάκιο }}</td>
+          <td style="padding:6px 4px; color:var(--muted-dark);">{{ k.έτη_από }} έως {{ k.έτη_έως }}</td>
+          <td style="padding:6px 4px; text-align:right; font-weight:600;">{{ '%.2f'|format(k.καθαρό_ποσό) }} €</td>
+        </tr>
+        {% endfor %}
+      </table>
+      <div class="hint" style="margin-top:8px;">
+        * Τα παραπάνω ποσά συμπεριλαμβάνουν το επίδομα παραμεθορίου, όπου ισχύει. Το επίδομα (100€ μεικτά)
+        ισχύει είτε προσληφθείς με <strong>ΠΛΗΡΕΣ</strong> είτε με <strong>ΜΕΙΩΜΕΝΟ</strong> ωράριο.
+      </div>
+      {% if paramethorios %}
+      <div style="margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); font-size:12.5px; line-height:1.5;">
+        {% if paramethorios.status == 'yes' %}
+        <span style="color:#1F6B3A; font-weight:600;">✅ * Η περιοχή «{{ map_ctx.nomos }}» είναι παραμεθόριος/προβληματική
+        περιοχή Α — ο αναπληρωτής δικαιούται επίδομα παραμεθορίου.</span>
+        {% elif paramethorios.status == 'partial' %}
+        <span style="color:var(--brass-dark); font-weight:600;">⚠️ * Μέρος του νομού «{{ map_ctx.nomos }}» είναι
+        παραμεθόριος ({{ paramethorios.detail }}) — η εφαρμογή δεν μπορεί να ξεχωρίσει αν η συγκεκριμένη περιοχή
+        εμπίπτει· χρειάζεται χειροκίνητος έλεγχος.</span>
+        {% else %}
+        <span style="color:var(--muted-dark);">❌ Ο νομός «{{ map_ctx.nomos }}» δεν είναι παραμεθόριος — δεν δικαιούται
+        ο αναπληρωτής επίδομα παραμεθορίου.</span>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 
 </div>
@@ -1279,6 +1388,7 @@ def _match_location(location_text: str):
                 "kind": "island" if sub.get("νησί") else "district",
                 "search_name": sub["ετικέτα"].split("(")[0].strip(),
                 "δήμοι": sub.get("δήμοι", []),
+                "nomos_key": nomos_key, "prefix": prefix,
             }
 
     if nomos_key and nomos_key in NOMOI:
@@ -1287,6 +1397,7 @@ def _match_location(location_text: str):
             "name": nomos_key.capitalize(), "capital": info["πρωτεύουσα"],
             "lat": info["lat"], "lng": info["lng"],
             "kind": "nomos", "search_name": nomos_key.capitalize(), "δήμοι": [],
+            "nomos_key": nomos_key, "prefix": prefix,
         }
     return None
 
@@ -1362,6 +1473,7 @@ def home():
 
     loc = _match_location(form["region"]) if form["region"] else None
     map_ctx = None
+    paramethorios = None
     if loc:
         map_ctx = {
             "nomos": loc["name"], "capital": loc["capital"], "kind": loc["kind"],
@@ -1370,6 +1482,7 @@ def home():
             "link_url": _osm_link(loc["lat"], loc["lng"]),
             "sch_url": _sch_embed_url(loc["lat"], loc["lng"]),
         }
+        paramethorios = _check_paramethorios(loc.get("nomos_key"), loc.get("prefix"))
 
     return render_page(
         "home", "Γρήγορος έλεγχος", "Δώσε κλάδο, τοποθεσία-στόχο και τα μόριά σου — θα δεις πού θα έμπαινες φέτος.",
@@ -1380,6 +1493,8 @@ def home():
         avg_dates=_average_phase_dates(),
         last_update=_last_data_update(),
         moriodotisi=_load_moriodotisi(),
+        mistho_klimakia=_load_mistho_klimakia(),
+        paramethorios=paramethorios,
         map_ctx=map_ctx,
     )
 
