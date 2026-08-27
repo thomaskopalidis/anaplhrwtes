@@ -23,6 +23,7 @@ webapp.py — Τοπική ιστοσελίδα (web εφαρμογή) για τ
 from __future__ import annotations
 
 import builtins
+import datetime
 import io
 import json
 import os
@@ -444,6 +445,10 @@ SHELL_TEMPLATE = """<!doctype html>
     font-size: 12.5px; cursor: pointer; text-align: left; transition: background .15s;
   }
   .theme-toggle-btn:hover { background: rgba(255,255,255,.12); }
+  .site-footer {
+    margin-top: 44px; padding-top: 16px; border-top: 1px solid var(--line);
+    font-size: 11.5px; color: var(--muted); text-align: center; line-height: 1.6;
+  }
   .eduai-fab {
     position: fixed; bottom: 22px; right: 22px; z-index: 40;
     background: var(--brass); color: #fff; border: none; padding: 12px 18px;
@@ -532,6 +537,10 @@ SHELL_TEMPLATE = """<!doctype html>
     <h1 class="page-title">{{ title }}</h1>
     <p class="page-sub">{{ subtitle }}</p>
     {{ body|safe }}
+    <footer class="site-footer">
+      © {{ current_year }} Kopalidis P. Thomas — Πίνακες Αναπληρωτών · Ανεπίσημο εργαλείο ελέγχου, χωρίς καμία σχέση με το
+      Υπουργείο Παιδείας ή το ΑΣΕΠ.
+    </footer>
   </main>
 </div>
 
@@ -756,6 +765,7 @@ SHELL_TEMPLATE = """<!doctype html>
       "ΠΑΤΜΟΥ": [37.3047, 26.5478],
       "ΑΡΚΟΙ": [37.3833, 26.7333],
       "ΛΕΡΟΥ": [37.1500, 26.8500],
+      "ΙΟΥ": [36.7167, 25.2833],
     };
 
     if (dimoi && dimoi.length > 1) {
@@ -876,7 +886,7 @@ def render_page(active, title, subtitle, inner_template, **ctx):
     body = render_template_string(inner_template, **ctx)
     return render_template_string(
         SHELL_TEMPLATE, active=active, title=title, subtitle=subtitle, body=body,
-        data_dir=str(core.CFG.DATA_DIR),
+        data_dir=str(core.CFG.DATA_DIR), current_year=datetime.date.today().year,
     )
 
 
@@ -1768,7 +1778,18 @@ def api_chat():
         reply = (result.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
         return {"reply": reply or "Δεν έλαβα απάντηση — δοκίμασε ξανά."}
     except urllib.error.HTTPError as exc:
-        return {"error": f"Σφάλμα από το eduAI (κωδικός {exc.code}). Δοκίμασε ξανά σε λίγο."}, 502
+        detail = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+            parsed = json.loads(body)
+            err = parsed.get("error", parsed)
+            detail = err.get("message", "") if isinstance(err, dict) else str(err)
+        except Exception:                                              # noqa: BLE001
+            detail = ""
+        msg = f"Σφάλμα από το eduAI (κωδικός {exc.code})"
+        if detail:
+            msg += f": {detail[:300]}"
+        return {"error": msg + ". Δοκίμασε ξανά σε λίγο."}, 502
     except Exception:                                                  # noqa: BLE001
         return {"error": "Κάτι πήγε στραβά με το eduAI. Δοκίμασε ξανά σε λίγο."}, 502
 
