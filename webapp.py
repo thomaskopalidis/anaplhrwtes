@@ -432,6 +432,25 @@ SHELL_TEMPLATE = """<!doctype html>
   }
   .verdict-ok { background: #E7F5EC; border: 1px solid #B7DDC3; color: #1F6B3A; }
   .verdict-no { background: #FBEBEA; border: 1px solid #E7B8B4; color: #B23A3A; }
+  .stats-official {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 20px 24px; margin-bottom: 16px;
+  }
+  .stats-official-title {
+    font-family: Georgia,"Iowan Old Style","Times New Roman",serif; font-size: 15px;
+    font-weight: 700; color: var(--ink); margin-bottom: 14px; padding-bottom: 10px;
+    border-bottom: 2px solid var(--brass);
+  }
+  .stats-official-grid { display: flex; gap: 24px; flex-wrap: wrap; }
+  .stat-box { flex: 1 1 200px; }
+  .stat-label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+  .stat-value {
+    font-family: Georgia,"Iowan Old Style","Times New Roman",serif; font-size: 30px;
+    font-weight: 700; color: var(--brass-dark); line-height: 1.2;
+  }
+  [data-theme="dark"] .stat-value { color: var(--brass); }
+  .stat-sub { font-size: 12px; color: var(--muted-dark); margin-top: 2px; }
+  .slip-title { font-family: Georgia,"Iowan Old Style","Times New Roman",serif; font-weight: 700; }
   .copy-btn {
     background: none; border: 1px solid var(--line); color: var(--muted-dark);
     padding: 4px 10px; border-radius: 5px; font-size: 12px; cursor: pointer;
@@ -1063,10 +1082,32 @@ HOME_TEMPLATE = """
   <span style="font-size:22px;">{{ '✅' if verdict.ok else '❌' }}</span> {{ verdict.text }}
 </div>
 {% endif %}
+{% if stats %}
+<div class="stats-official">
+  <div class="stats-official-title">Επίσημη σύνοψη θέσης</div>
+  <div class="stats-official-grid">
+    {% if stats.position %}
+    <div class="stat-box">
+      <div class="stat-label">Θέση στον τρέχοντα πίνακα</div>
+      <div class="stat-value">#{{ '{:,}'.format(stats.position).replace(',', '.') }}</div>
+      <div class="stat-sub">από {{ '{:,}'.format(stats.total).replace(',', '.') }} υποψηφίους</div>
+    </div>
+    {% endif %}
+    {% if stats.position_after %}
+    <div class="stat-box">
+      <div class="stat-label">Θέση μετά την αφαίρεση μονίμων</div>
+      <div class="stat-value">#{{ '{:,}'.format(stats.position_after).replace(',', '.') }}</div>
+      <div class="stat-sub">από {{ '{:,}'.format(stats.total_after).replace(',', '.') }}
+        ({{ stats.removed }} μόνιμοι αφαιρέθηκαν)</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 {% if output %}
-<div class="slip">
+<div class="slip slip-official">
   <div class="slip-head">
-    <span>Αποτέλεσμα ελέγχου</span>
+    <span class="slip-title">📄 Αποτέλεσμα ελέγχου</span>
     <span style="display:flex; align-items:center; gap:10px;">
       <button type="button" class="copy-btn" onclick="copyResult(this)">📋 Αντιγραφή</button>
       <span class="tag">{{ form.klados }}</span>
@@ -1265,6 +1306,26 @@ def _sch_embed_url(lat: float, lng: float, zoom: int = 9) -> str:
     return f"https://maps.sch.gr/embed.html?zoom={zoom}&lat={lat}&lng={lng}"
 
 
+def _extract_predict_stats(output_text: str):
+    """Εξάγει τη θέση στον πίνακα (πριν/μετά την αφαίρεση μονίμων) από το
+    κείμενο εξόδου του predict, για επίσημη, ευανάγνωστη εμφάνιση. Βασίζεται
+    στη ΣΤΑΘΕΡΗ μορφή εκτύπωσης του main.py — αν αλλάξει εκεί, απλά δεν θα
+    βρεθεί τίποτα (None), όχι λάθος αριθμοί."""
+    if not output_text:
+        return None
+    stats = {}
+    m1 = re.search(r"Στον τρέχοντα πίνακα \((\d+) υποψήφιοι\): περίπου θέση #(\d+)", output_text)
+    if m1:
+        stats["total"] = int(m1.group(1))
+        stats["position"] = int(m1.group(2))
+    m2 = re.search(r"Μετά την αφαίρεση (\d+) μονίμων: περίπου θέση #(\d+)\s*από (\d+)", output_text)
+    if m2:
+        stats["removed"] = int(m2.group(1))
+        stats["position_after"] = int(m2.group(2))
+        stats["total_after"] = int(m2.group(3))
+    return stats or None
+
+
 def _extract_verdict(output_text: str):
     """Απλή ανίχνευση θετικής/αρνητικής έκβασης μέσα στο κείμενο του predict,
     για το έγχρωμο πλαίσιο πάνω από το τεχνικό output. None αν δεν βρέθηκε
@@ -1314,6 +1375,7 @@ def home():
         "home", "Γρήγορος έλεγχος", "Δώσε κλάδο, τοποθεσία-στόχο και τα μόριά σου — θα δεις πού θα έμπαινες φέτος.",
         HOME_TEMPLATE, form=form, output=output, error=error,
         verdict=_extract_verdict(output),
+        stats=_extract_predict_stats(output),
         klados_datalist=_klados_datalist("klados-list", _available_klados()),
         avg_dates=_average_phase_dates(),
         last_update=_last_data_update(),
