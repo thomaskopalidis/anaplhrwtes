@@ -1692,7 +1692,7 @@ def full():
         "Κλάδος, αφαίρεση μονίμων, περιοχή διορισμού και αποθήκευση αρχείου επαλήθευσης.",
         FULL_TEMPLATE, form=form, output=output, error=error,
         klados_datalist=_klados_datalist("klados-list", _available_klados()),
-        year_options=_recent_years_only(_available_years()),
+        year_options=_recent_years_only(_available_years(), cutoff=2024),
     )
 
 
@@ -1896,11 +1896,12 @@ def download_file(filename):
 
 
 # ---------------------------------------------------------------------------
-# eduAI — μικρός βοηθός AI (xAI/Grok). Το κλειδί API διαβάζεται ΜΟΝΟ από τη
-# μεταβλητή περιβάλλοντος XAI_API_KEY — ΠΟΤΕ δεν γράφεται εδώ. Χωρίς αυτήν, η
+# eduAI — μικρός βοηθός AI (Google Gemini — έχει πραγματικό δωρεάν επίπεδο,
+# χωρίς κάρτα, χωρίς λήξη). Το κλειδί API διαβάζεται ΜΟΝΟ από τη μεταβλητή
+# περιβάλλοντος GEMINI_API_KEY — ΠΟΤΕ δεν γράφεται εδώ. Χωρίς αυτήν, η
 # διαδρομή απαντάει ευγενικά ότι δεν έχει ρυθμιστεί, χωρίς να ρίχνει τον server.
-XAI_API_KEY = os.environ.get("XAI_API_KEY", "")
-XAI_MODEL = "grok-4.3"  # δες docs.x.ai για ενημερωμένη λίστα/τιμές αν αλλάξει
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = "gemini-2.5-flash"  # δες ai.google.dev/gemini-api/docs/rate-limits αν αλλάξει
 
 _EDUAI_SYSTEM_BASE = (
     "Είσαι το eduAI, ένας σύντομος βοηθός μέσα σε μια ανεπίσημη εφαρμογή ελέγχου "
@@ -1956,7 +1957,7 @@ def _chat_rate_ok(ip: str) -> bool:
 
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
-    if not XAI_API_KEY:
+    if not GEMINI_API_KEY:
         return {"error": "Το eduAI δεν έχει ρυθμιστεί ακόμα σε αυτόν τον server "
                           "(λείπει το κλειδί API)."}, 503
 
@@ -1972,27 +1973,36 @@ def api_chat():
     if len(message) > 2000:
         return {"error": "Πολύ μεγάλο μήνυμα (μέγιστο 2000 χαρακτήρες)."}, 400
 
-    messages = [{"role": "system", "content": _eduai_system_prompt()}]
+    # Το Gemini θέλει "contents" (όχι "messages"), με ρόλους "user"/"model"
+    # (όχι "assistant"), και ξεχωριστό "systemInstruction" (όχι μήνυμα role=system).
+    contents = []
     if isinstance(history, list):
         for h in history[-8:]:                                        # μόνο τα τελευταία λίγα
             if not isinstance(h, dict):
                 continue
             role, content = h.get("role"), h.get("content")
             if role in ("user", "assistant") and isinstance(content, str) and content.strip():
-                messages.append({"role": role, "content": content[:2000]})
-    messages.append({"role": "user", "content": message})
+                gem_role = "model" if role == "assistant" else "user"
+                contents.append({"role": gem_role, "parts": [{"text": content[:2000]}]})
+    contents.append({"role": "user", "parts": [{"text": message}]})
 
     payload = json.dumps({
-        "model": XAI_MODEL, "messages": messages, "max_tokens": 500, "temperature": 0.5,
+        "contents": contents,
+        "systemInstruction": {"parts": [{"text": _eduai_system_prompt()}]},
+        "generationConfig": {"maxOutputTokens": 500, "temperature": 0.5},
     }).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.x.ai/v1/chat/completions", data=payload, method="POST",
-        headers={"Authorization": f"Bearer {XAI_API_KEY}", "Content-Type": "application/json"},
-    )
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+           f"?key={GEMINI_API_KEY}")
+    req = urllib.request.Request(url, data=payload, method="POST",
+                                  headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read().decode("utf-8"))
-        reply = (result.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+        candidates = result.get("candidates") or []
+        reply = ""
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            reply = "".join(p.get("text", "") for p in parts).strip()
         return {"reply": reply or "Δεν έλαβα απάντηση — δοκίμασε ξανά."}
     except urllib.error.HTTPError as exc:
         detail = ""
