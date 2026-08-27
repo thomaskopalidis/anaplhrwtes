@@ -299,6 +299,51 @@ def _load_epidomata() -> list:
     return result
 
 
+_nomos_units_cache = {"value": None, "ts": 0.0}
+
+
+def _load_nomos_units_info() -> dict:
+    """Φορτώνει το data/nomos_units_info.json (πρωτεύουσα/συντεταγμένες/
+    περιφέρεια για τις 74 πραγματικές μονάδες), για τη σελίδα Σχολεία."""
+    now = time.monotonic()
+    if _nomos_units_cache["value"] is not None and now - _nomos_units_cache["ts"] < _CACHE_TTL:
+        return _nomos_units_cache["value"]
+    result = {}
+    path = core.CFG.DATA_DIR / "nomos_units_info.json"
+    if path.exists():
+        try:
+            import json
+            with open(path, encoding="utf-8") as fh:
+                result = json.load(fh)
+        except Exception:                                            # noqa: BLE001
+            result = {}
+    _nomos_units_cache["value"], _nomos_units_cache["ts"] = result, now
+    return result
+
+
+_nomos_cities_cache = {"value": None, "ts": 0.0}
+
+
+def _load_nomos_cities() -> dict:
+    """Φορτώνει το data/nomos_cities.json (μεγάλες πόλεις ανά μονάδα, πέρα
+    από την πρωτεύουσα), για τη σελίδα Σχολεία. Επεκτάσιμο σταδιακά."""
+    now = time.monotonic()
+    if _nomos_cities_cache["value"] is not None and now - _nomos_cities_cache["ts"] < _CACHE_TTL:
+        return _nomos_cities_cache["value"]
+    result = {}
+    path = core.CFG.DATA_DIR / "nomos_cities.json"
+    if path.exists():
+        try:
+            import json
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            result = data.get("πόλεις", {})
+        except Exception:                                            # noqa: BLE001
+            result = {}
+    _nomos_cities_cache["value"], _nomos_cities_cache["ts"] = result, now
+    return result
+
+
 _paramethorios_cache = {"value": None, "ts": 0.0}
 
 
@@ -640,6 +685,7 @@ SHELL_TEMPLATE = """<!doctype html>
     <a href="{{ url_for('summary') }}" class="{{ 'active' if active=='summary' else '' }}">🔍 Σύνοψη κλάδου</a>
     <a href="{{ url_for('phase') }}" class="{{ 'active' if active=='phase' else '' }}">🧭 Βάση φάσης</a>
     <a href="{{ url_for('upgrades') }}" class="{{ 'active' if active=='upgrades' else '' }}">🚀 Αναβαθμίσεις</a>
+    <a href="{{ url_for('schools') }}" class="{{ 'active' if active=='schools' else '' }}">🏫 Σχολεία</a>
     <a href="{{ url_for('downloads') }}" class="{{ 'active' if active=='downloads' else '' }}">📥 Αρχεία αποτελεσμάτων</a>
     <button type="button" id="theme-toggle" class="theme-toggle-btn">🌙 Σκοτεινό θέμα</button>
     <div class="sidebar-footer">📁 {{ data_dir }}</div>
@@ -1325,11 +1371,31 @@ NOMOI = {
     "ΧΙΟΥ": {"πρωτεύουσα": "Χίος", "lat": 38.3686, "lng": 26.1364},
     "ΛΕΣΒΟΥ": {"πρωτεύουσα": "Μυτιλήνη", "lat": 39.1064, "lng": 26.5556},
     "ΠΕΙΡΑΙΩΣ": {"πρωτεύουσα": "Πειραιάς", "lat": 37.9475, "lng": 23.6362},
+    "ΑΝΑΤΟΛΙΚΗΣ ΑΤΤΙΚΗΣ": {"πρωτεύουσα": "Παλλήνη", "lat": 37.9000, "lng": 23.9500},
 }
 # Εναλλακτικές γραφές που εμφανίζονται συχνά στις "περιοχές διορισμού"
 NOMOI_ALIASES = {
     "ΑΘΗΝΩΝ": "ΑΤΤΙΚΗΣ", "ΑΘΗΝΑΣ": "ΑΤΤΙΚΗΣ", "ΠΕΙΡΑΙΑ": "ΠΕΙΡΑΙΩΣ",
     "ΘΕΣΣΑΛΟΝΙΚΗ": "ΘΕΣΣΑΛΟΝΙΚΗΣ", "ΘΕΣΝΙΚΗΣ": "ΘΕΣΣΑΛΟΝΙΚΗΣ",  # "ΘΕΣ/ΝΙΚΗΣ" μετά την αφαίρεση "/"
+}
+
+# Οι 13 επίσημες περιφέρειες της Ελλάδας, με τους νομούς που περιλαμβάνει η
+# καθεμία (κλειδιά όπως στο NOMOI παραπάνω). Χρησιμοποιείται στη σελίδα
+# "Σχολεία" για το δίδυμο dropdown περιφέρεια -> νομός.
+PERIFEREIES = {
+    "Αττική": ["ΑΤΤΙΚΗΣ", "ΠΕΙΡΑΙΩΣ", "ΑΝΑΤΟΛΙΚΗΣ ΑΤΤΙΚΗΣ"],
+    "Κεντρική Μακεδονία": ["ΘΕΣΣΑΛΟΝΙΚΗΣ", "ΗΜΑΘΙΑΣ", "ΚΙΛΚΙΣ", "ΠΕΛΛΑΣ", "ΠΙΕΡΙΑΣ", "ΣΕΡΡΩΝ", "ΧΑΛΚΙΔΙΚΗΣ"],
+    "Ανατολική Μακεδονία και Θράκη": ["ΔΡΑΜΑΣ", "ΚΑΒΑΛΑΣ", "ΞΑΝΘΗΣ", "ΡΟΔΟΠΗΣ", "ΕΒΡΟΥ"],
+    "Δυτική Μακεδονία": ["ΚΟΖΑΝΗΣ", "ΚΑΣΤΟΡΙΑΣ", "ΦΛΩΡΙΝΑΣ", "ΓΡΕΒΕΝΩΝ"],
+    "Ήπειρος": ["ΙΩΑΝΝΙΝΩΝ", "ΘΕΣΠΡΩΤΙΑΣ", "ΑΡΤΑΣ", "ΠΡΕΒΕΖΑΣ"],
+    "Θεσσαλία": ["ΛΑΡΙΣΑΣ", "ΜΑΓΝΗΣΙΑΣ", "ΤΡΙΚΑΛΩΝ", "ΚΑΡΔΙΤΣΑΣ"],
+    "Στερεά Ελλάδα": ["ΦΘΙΩΤΙΔΑΣ", "ΒΟΙΩΤΙΑΣ", "ΕΥΒΟΙΑΣ", "ΦΩΚΙΔΑΣ", "ΕΥΡΥΤΑΝΙΑΣ"],
+    "Δυτική Ελλάδα": ["ΑΧΑΙΑΣ", "ΑΙΤΩΛΟΑΚΑΡΝΑΝΙΑΣ", "ΗΛΕΙΑΣ"],
+    "Πελοπόννησος": ["ΑΡΓΟΛΙΔΑΣ", "ΑΡΚΑΔΙΑΣ", "ΚΟΡΙΝΘΙΑΣ", "ΛΑΚΩΝΙΑΣ", "ΜΕΣΣΗΝΙΑΣ"],
+    "Ιόνια Νησιά": ["ΚΕΡΚΥΡΑΣ", "ΛΕΥΚΑΔΑΣ", "ΚΕΦΑΛΛΗΝΙΑΣ", "ΖΑΚΥΝΘΟΥ"],
+    "Βόρειο Αιγαίο": ["ΛΕΣΒΟΥ", "ΣΑΜΟΥ", "ΧΙΟΥ"],
+    "Νότιο Αιγαίο": ["ΚΥΚΛΑΔΩΝ", "ΔΩΔΕΚΑΝΗΣΟΥ"],
+    "Κρήτη": ["ΧΑΝΙΩΝ", "ΡΕΘΥΜΝΟΥ", "ΗΡΑΚΛΕΙΟΥ", "ΛΑΣΙΘΙΟΥ"],
 }
 
 # Ζητούμενο: κάποιες "περιοχές διορισμού" με πρόθεμα (π.χ. "Β' ΕΒΡΟΥ") ΔΕΝ
@@ -1840,6 +1906,205 @@ def upgrades():
         UPGRADES_TEMPLATE, form=form, output=output, error=error,
         klados_datalist=_klados_datalist("klados-list", _available_klados()),
         year_options=_available_years(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Καρτέλα: Σχολεία — πραγματικός διαδραστικός χάρτης (περιφέρειες -> νομοί ->
+# πρωτεύουσα/πόλεις + χάρτης σχολικών μονάδων ΠΣΔ). Τα όρια είναι πραγματικά
+# γεωγραφικά δεδομένα (GeoJSON), όχι σχηματικά.
+# ---------------------------------------------------------------------------
+SCHOOLS_TEMPLATE = """
+<div class="card" style="padding:0; overflow:hidden;">
+  <div style="display:flex; flex-wrap:wrap;">
+    <div style="flex:3 1 420px; min-width:0; position:relative;">
+      <div id="greece-map" style="height:620px;"></div>
+      <button type="button" id="map-back-btn" class="copy-btn"
+              style="display:none; position:absolute; top:12px; left:12px; z-index:500; background:var(--card);">
+        ← Πίσω στις περιφέρειες
+      </button>
+    </div>
+    <div style="flex:1 1 220px; min-width:200px; padding:18px 20px; border-left:1px solid var(--line); max-height:620px; overflow-y:auto;">
+      <div id="map-legend-title" style="font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:10px;">Περιφέρειες</div>
+      <div id="map-legend"></div>
+    </div>
+  </div>
+</div>
+
+<div id="nomos-info-card" class="card" style="display:none;">
+  <div id="nomos-info-title" style="font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:17px; color:var(--ink); margin-bottom:8px;"></div>
+  <div id="nomos-info-body" style="font-size:13.5px; line-height:1.6; color:var(--muted-dark);"></div>
+</div>
+
+<div id="schools-map-card" class="card" style="display:none;">
+  <div id="schools-map-title" style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:10px;"></div>
+  <div style="border-radius:8px; overflow:hidden; border:1px solid var(--line);">
+    <iframe id="schools-map-iframe" src="" width="100%" height="480" style="border:0; display:block;"
+            scrolling="no" loading="lazy" title="Χάρτης σχολικών μονάδων ΠΣΔ"></iframe>
+  </div>
+  <a id="schools-map-link" href="https://maps.sch.gr/main.html" target="_blank" rel="noopener"
+     style="display:inline-block; margin-top:8px; font-size:12px; color:var(--brass);">
+    Άνοιγμα πλήρους χάρτη σε νέα καρτέλα ↗
+  </a>
+</div>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+(function () {
+  var NOMOS_INFO = {{ nomos_info_json|safe }};
+  var NOMOS_CITIES = {{ nomos_cities_json|safe }};
+  var PALETTE = ["#B98A3D","#5C8AA6","#7A9B5C","#A65C7A","#8A6FB0","#C77B4E","#4E9B8F",
+                 "#B0546F","#6F8FB0","#9B8A4E","#7A5C9B","#4E8F6B","#B06F4E"];
+
+  var map = L.map("greece-map", { scrollWheelZoom: true }).setView([39.0, 22.6], 6);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap contributors", maxZoom: 18,
+  }).addTo(map);
+
+  var perifLayer = null, nomosLayer = null;
+  var perifData = null, nomoiData = null;
+  var backBtn = document.getElementById("map-back-btn");
+  var legendEl = document.getElementById("map-legend");
+  var legendTitleEl = document.getElementById("map-legend-title");
+  var infoCard = document.getElementById("nomos-info-card");
+  var schoolsCard = document.getElementById("schools-map-card");
+
+  function titleCase(s) {
+    return s.toLowerCase().replace(/(^|\\s|-)\\p{L}/gu, function (c) { return c.toUpperCase(); });
+  }
+
+  Promise.all([
+    fetch("{{ url_for('static', filename='greece_periphereies.geojson') }}").then(function (r) { return r.json(); }),
+    fetch("{{ url_for('static', filename='greece_nomoi.geojson') }}").then(function (r) { return r.json(); }),
+  ]).then(function (results) {
+    perifData = results[0];
+    nomoiData = results[1];
+    renderPerifereies();
+  }).catch(function () {
+    legendEl.innerHTML = "<div style=\\"font-size:12.5px; color:var(--muted);\\">⚠️ Δεν φορτώθηκε ο χάρτης. Δοκίμασε ανανέωση.</div>";
+  });
+
+  function renderPerifereies() {
+    infoCard.style.display = "none";
+    schoolsCard.style.display = "none";
+    backBtn.style.display = "none";
+    if (nomosLayer) { map.removeLayer(nomosLayer); nomosLayer = null; }
+    if (perifLayer) { map.removeLayer(perifLayer); }
+
+    legendTitleEl.textContent = "Περιφέρειες";
+    legendEl.innerHTML = "";
+    var colorOf = {};
+    perifData.features.forEach(function (f, i) { colorOf[f.properties.name_greek] = PALETTE[i % PALETTE.length]; });
+
+    perifLayer = L.geoJSON(perifData, {
+      style: function (f) {
+        return { color: "#fff", weight: 1.5, fillColor: colorOf[f.properties.name_greek], fillOpacity: 0.72 };
+      },
+      onEachFeature: function (f, layer) {
+        layer.on("click", function () { selectPerif(f.properties.name_greek); });
+        layer.on("mouseover", function () { layer.setStyle({ fillOpacity: 0.9 }); });
+        layer.on("mouseout", function () { layer.setStyle({ fillOpacity: 0.72 }); });
+      },
+    }).addTo(map);
+    map.fitBounds(perifLayer.getBounds(), { padding: [10, 10] });
+
+    perifData.features.forEach(function (f, i) {
+      var name = f.properties.name_greek;
+      var item = document.createElement("div");
+      item.style.cssText = "display:flex; align-items:center; gap:8px; padding:7px 0; font-size:12.5px; cursor:pointer; border-bottom:1px solid var(--line);";
+      item.innerHTML = "<span style=\\"width:11px; height:11px; border-radius:3px; background:" + colorOf[name]
+        + "; flex-shrink:0;\\"></span><span style=\\"color:var(--muted-dark);\\">" + (i + 1) + ".</span> " + titleCase(name);
+      item.addEventListener("click", function () { selectPerif(name); });
+      legendEl.appendChild(item);
+    });
+  }
+
+  function selectPerif(perifName) {
+    map.removeLayer(perifLayer);
+    backBtn.style.display = "inline-block";
+    legendTitleEl.textContent = titleCase(perifName);
+
+    var members = nomoiData.features.filter(function (f) {
+      var info = NOMOS_INFO[f.properties.name_greek.trim()];
+      return info && info.perif === perifName;
+    });
+    var colorOf = {};
+    members.forEach(function (f, i) { colorOf[f.properties.name_greek.trim()] = PALETTE[i % PALETTE.length]; });
+
+    nomosLayer = L.geoJSON({ type: "FeatureCollection", features: members }, {
+      style: function (f) {
+        return { color: "#fff", weight: 1.5, fillColor: colorOf[f.properties.name_greek.trim()], fillOpacity: 0.78 };
+      },
+      onEachFeature: function (f, layer) {
+        var n = f.properties.name_greek.trim();
+        layer.on("click", function () { selectNomos(n, colorOf); });
+      },
+    }).addTo(map);
+    map.fitBounds(nomosLayer.getBounds(), { padding: [16, 16] });
+
+    legendEl.innerHTML = "";
+    members.forEach(function (f, i) {
+      var n = f.properties.name_greek.trim();
+      var info = NOMOS_INFO[n];
+      var item = document.createElement("div");
+      item.style.cssText = "display:flex; align-items:center; gap:8px; padding:7px 0; font-size:12.5px; cursor:pointer; border-bottom:1px solid var(--line);";
+      item.innerHTML = "<span style=\\"width:11px; height:11px; border-radius:3px; background:" + colorOf[n]
+        + "; flex-shrink:0;\\"></span><span style=\\"color:var(--muted-dark);\\">" + (i + 1) + ".</span> "
+        + titleCase(n) + " <span style=\\"color:var(--muted); font-size:11px;\\">(" + info.capital + ")</span>";
+      item.addEventListener("click", function () { selectNomos(n, colorOf); });
+      legendEl.appendChild(item);
+    });
+
+    infoCard.style.display = "none";
+    schoolsCard.style.display = "none";
+  }
+
+  function selectNomos(name, colorOf) {
+    nomosLayer.eachLayer(function (layer) {
+      var n = layer.feature.properties.name_greek.trim();
+      if (n === name) {
+        layer.setStyle({ fillColor: "#B98A3D", fillOpacity: 0.85, color: "#8F6A2C", weight: 2 });
+        layer.bringToFront();
+        map.fitBounds(layer.getBounds(), { padding: [24, 24] });
+      } else {
+        layer.setStyle({ fillColor: "#ffffff", fillOpacity: 0.35, color: "#D7DEE6", weight: 1 });
+      }
+    });
+
+    var info = NOMOS_INFO[name];
+    var cities = NOMOS_CITIES[name];
+    infoCard.style.display = "block";
+    document.getElementById("nomos-info-title").textContent = titleCase(name);
+    var body = "<strong>Πρωτεύουσα:</strong> " + info.capital;
+    if (cities && cities.length) {
+      body += "<br><strong>Μεγάλες πόλεις:</strong> " + cities.join(", ");
+    }
+    document.getElementById("nomos-info-body").innerHTML = body;
+
+    schoolsCard.style.display = "block";
+    document.getElementById("schools-map-title").textContent = "🏫 Σχολικές μονάδες — " + titleCase(name);
+    document.getElementById("schools-map-iframe").src =
+      "https://maps.sch.gr/embed.html?zoom=10&lat=" + info.lat + "&lng=" + info.lng;
+  }
+
+  backBtn.addEventListener("click", renderPerifereies);
+})();
+</script>
+"""
+
+
+@app.route("/schools")
+def schools():
+    nomos_info = _load_nomos_units_info()
+    nomos_cities = _load_nomos_cities()
+    return render_page(
+        "schools", "Σχολεία",
+        "Κάνε κλικ σε μια περιφέρεια, μετά σε έναν νομό, για να δεις την πρωτεύουσα, τις μεγάλες πόλεις, "
+        "και τις σχολικές μονάδες Πρωτοβάθμιας/Δευτεροβάθμιας εκεί.",
+        SCHOOLS_TEMPLATE,
+        nomos_info_json=json.dumps(nomos_info, ensure_ascii=False),
+        nomos_cities_json=json.dumps(nomos_cities, ensure_ascii=False),
     )
 
 
