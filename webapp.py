@@ -1974,15 +1974,26 @@ SCHOOLS_TEMPLATE = """
     return s.toLowerCase().replace(/(^|\\s|-)\\p{L}/gu, function (c) { return c.toUpperCase(); });
   }
 
+  function fetchGeoJSON(url, label) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) {
+        throw new Error(label + ": HTTP " + r.status + " στο " + url);
+      }
+      return r.json();
+    });
+  }
+
   Promise.all([
-    fetch("{{ url_for('static', filename='greece_periphereies.geojson') }}").then(function (r) { return r.json(); }),
-    fetch("{{ url_for('static', filename='greece_nomoi.geojson') }}").then(function (r) { return r.json(); }),
+    fetchGeoJSON("{{ url_for('static', filename='greece_periphereies.geojson') }}", "Περιφέρειες"),
+    fetchGeoJSON("{{ url_for('static', filename='greece_nomoi.geojson') }}", "Νομοί"),
   ]).then(function (results) {
     perifData = results[0];
     nomoiData = results[1];
     renderPerifereies();
-  }).catch(function () {
-    legendEl.innerHTML = "<div style=\\"font-size:12.5px; color:var(--muted);\\">⚠️ Δεν φορτώθηκε ο χάρτης. Δοκίμασε ανανέωση.</div>";
+  }).catch(function (err) {
+    legendEl.innerHTML = "<div style=\\"font-size:12px; color:var(--muted); line-height:1.5;\\">⚠️ Δεν φορτώθηκε ο χάρτης.<br><br>"
+      + "<strong>Λεπτομέρεια:</strong> " + (err && err.message ? err.message : String(err))
+      + "<br><br>Πιθανότατα λείπουν τα αρχεία .geojson από τον φάκελο static/.</div>";
   });
 
   function renderPerifereies() {
@@ -1999,12 +2010,12 @@ SCHOOLS_TEMPLATE = """
 
     perifLayer = L.geoJSON(perifData, {
       style: function (f) {
-        return { color: "#fff", weight: 1.5, fillColor: colorOf[f.properties.name_greek], fillOpacity: 0.72 };
+        return { color: "#fff", weight: 1.5, fillColor: colorOf[f.properties.name_greek], fillOpacity: 0.32 };
       },
       onEachFeature: function (f, layer) {
         layer.on("click", function () { selectPerif(f.properties.name_greek); });
-        layer.on("mouseover", function () { layer.setStyle({ fillOpacity: 0.9 }); });
-        layer.on("mouseout", function () { layer.setStyle({ fillOpacity: 0.72 }); });
+        layer.on("mouseover", function () { layer.setStyle({ fillOpacity: 0.5 }); });
+        layer.on("mouseout", function () { layer.setStyle({ fillOpacity: 0.32 }); });
       },
     }).addTo(map);
     map.fitBounds(perifLayer.getBounds(), { padding: [10, 10] });
@@ -2034,7 +2045,7 @@ SCHOOLS_TEMPLATE = """
 
     nomosLayer = L.geoJSON({ type: "FeatureCollection", features: members }, {
       style: function (f) {
-        return { color: "#fff", weight: 1.5, fillColor: colorOf[f.properties.name_greek.trim()], fillOpacity: 0.78 };
+        return { color: "#fff", weight: 1.5, fillColor: colorOf[f.properties.name_greek.trim()], fillOpacity: 0.38 };
       },
       onEachFeature: function (f, layer) {
         var n = f.properties.name_greek.trim();
@@ -2064,16 +2075,34 @@ SCHOOLS_TEMPLATE = """
     nomosLayer.eachLayer(function (layer) {
       var n = layer.feature.properties.name_greek.trim();
       if (n === name) {
-        layer.setStyle({ fillColor: "#B98A3D", fillOpacity: 0.85, color: "#8F6A2C", weight: 2 });
+        layer.setStyle({ fillColor: "#B98A3D", fillOpacity: 0.22, color: "#8F6A2C", weight: 3 });
         layer.bringToFront();
         map.fitBounds(layer.getBounds(), { padding: [24, 24] });
       } else {
-        layer.setStyle({ fillColor: "#ffffff", fillOpacity: 0.35, color: "#D7DEE6", weight: 1 });
+        layer.setStyle({ fillColor: "#ffffff", fillOpacity: 0.15, color: "#D7DEE6", weight: 1 });
       }
     });
 
     var info = NOMOS_INFO[name];
     var cities = NOMOS_CITIES[name];
+
+    // Το όνομα/πρωτεύουσα/πόλεις μπαίνουν ΠΑΝΩ-ΠΑΝΩ στο πλαϊνό πάνελ (πάνω από τη
+    // λίστα των νομών), ώστε να φαίνονται αμέσως χωρίς να χρειάζεται scroll κάτω
+    // από τον (ψηλό) χάρτη.
+    var selBody = "<div id=\\"nomos-legend-info\\">"
+      + "<div style=\\"font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:16px; color:var(--ink); margin-bottom:6px;\\">"
+      + titleCase(name) + "</div>"
+      + "<div style=\\"font-size:12.5px; line-height:1.6; color:var(--muted-dark); margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--line);\\">"
+      + "<strong>Πρωτεύουσα:</strong> " + info.capital;
+    if (cities && cities.length) {
+      selBody += "<br><strong>Μεγάλες πόλεις:</strong> " + cities.join(", ");
+    }
+    selBody += "</div></div>";
+    var oldInfo = document.getElementById("nomos-legend-info");
+    if (oldInfo) { oldInfo.remove(); }
+    legendEl.insertAdjacentHTML("afterbegin", selBody);
+
+    // Κρατάμε και την πιο αναλυτική κάρτα κάτω από τον χάρτη επίσης.
     infoCard.style.display = "block";
     document.getElementById("nomos-info-title").textContent = titleCase(name);
     var body = "<strong>Πρωτεύουσα:</strong> " + info.capital;
