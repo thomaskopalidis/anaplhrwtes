@@ -1221,6 +1221,21 @@ def _region_vathmida(region) -> str:
     return "Δ.Ε." if _DE_TAG_RX.search(str(region)) else ""
 
 
+def _fmt_int_col(series):
+    """Μορφοποιεί μια στήλη σειράς/θέσης ως ακέραιο κείμενο (π.χ. '546' αντί
+    για '546.0'), με '—' για κενές/άκυρες τιμές. Οι σειρές/θέσεις είναι εξ
+    ορισμού ακέραιοι — το .0 εμφανίζεται μόνο επειδή η στήλη γίνεται float
+    όταν έχει και κενά (NaN) ανάμεσα στις τιμές της."""
+    def fmt(v):
+        try:
+            if pd.isna(v):
+                return "—"
+            return str(int(round(float(v))))
+        except (TypeError, ValueError):
+            return "—"
+    return series.map(fmt)
+
+
 def cmd_upgrades(args):
     """
     Ζητούμενο (νέα εντολή):
@@ -1352,7 +1367,22 @@ def cmd_upgrades(args):
             ph_dates_txt = f" ({ph_dates})" if ph_dates else ""
             print(f"\n📄 {ph}΄ Φάση{ph_dates_txt} — ΜΕΙΩΜΕΝΟ ωράριο ({len(meiomena)} άτομα"
                   f" · {n_de} σε θέσεις (Δ.Ε.), {n_other} σε λοιπές):")
-            print("   " + meiomena[show].to_string(index=False).replace("\n", "\n   "))
+            # Ζητούμενο: ομοιόμορφη, ευανάγνωστη σύνοψη πάνω από κάθε πίνακα —
+            # ο/η τελευταίος/α (χαμηλότερο μόριο = "βάση" της φάσης εκεί), με
+            # τη θέση του/της στη σειρά της φάσης ΤΟΤΕ και στον τρέχοντα
+            # πίνακα ΤΩΡΑ, ώστε να φαίνεται με μια ματιά πού κόπηκε η φάση.
+            base_row = meiomena.iloc[-1]
+            base_moria = to_float(base_row.get("ΜΟΡΙΑ"))
+            base_then = _fmt_int_col(pd.Series([base_row.get("ΣΕΙΡΑ_ΦΑΣΗΣ")])).iloc[0]
+            base_now = _fmt_int_col(pd.Series([base_row.get("ΣΕΙΡΑ_ΤΩΡΙΝΟΥ_ΠΙΝΑΚΑ")])).iloc[0]
+            if base_moria is not None and pd.notna(base_moria):
+                print(f"   📊 Βάση φάσης (χαμηλότερο μόριο που μπήκε ΜΕΙΩΜΕΝΟ): {base_moria:.3f} μόρια"
+                      f"  ·  θέση τότε #{base_then}  ·  θέση τώρα #{base_now}")
+            disp = meiomena[show].copy()
+            for _col in ("ΣΕΙΡΑ_ΦΑΣΗΣ", "ΣΕΙΡΑ_ΤΩΡΙΝΟΥ_ΠΙΝΑΚΑ"):
+                if _col in disp.columns:
+                    disp[_col] = _fmt_int_col(disp[_col])
+            print("   " + disp.to_string(index=False).replace("\n", "\n   "))
             for _, p in meiomena.iterrows():
                 all_meiomena_rows.append({
                     "ΕΤΟΣ": year, "ΦΑΣΗ": f"{ph}΄",
