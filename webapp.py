@@ -1962,7 +1962,7 @@ SCHOOLS_TEMPLATE = """
     attribution: "© OpenStreetMap contributors", maxZoom: 18,
   }).addTo(map);
 
-  var perifLayer = null, nomosLayer = null;
+  var perifLayer = null, nomosLayer = null, capitalMarker = null;
   var perifData = null, nomoiData = null;
   var backBtn = document.getElementById("map-back-btn");
   var legendEl = document.getElementById("map-legend");
@@ -2002,6 +2002,7 @@ SCHOOLS_TEMPLATE = """
     backBtn.style.display = "none";
     if (nomosLayer) { map.removeLayer(nomosLayer); nomosLayer = null; }
     if (perifLayer) { map.removeLayer(perifLayer); }
+    if (capitalMarker) { map.removeLayer(capitalMarker); capitalMarker = null; }
 
     legendTitleEl.textContent = "Περιφέρειες";
     legendEl.innerHTML = "";
@@ -2033,6 +2034,7 @@ SCHOOLS_TEMPLATE = """
 
   function selectPerif(perifName) {
     map.removeLayer(perifLayer);
+    if (capitalMarker) { map.removeLayer(capitalMarker); capitalMarker = null; }
     backBtn.style.display = "inline-block";
     legendTitleEl.textContent = titleCase(perifName);
 
@@ -2086,6 +2088,12 @@ SCHOOLS_TEMPLATE = """
 
     var info = NOMOS_INFO[name];
     var cities = NOMOS_CITIES[name];
+
+    if (capitalMarker) { map.removeLayer(capitalMarker); }
+    capitalMarker = L.circleMarker([info.lat, info.lng], {
+      radius: 6, color: "#1D4ED8", weight: 2, fillColor: "#3B82F6", fillOpacity: 0.9,
+    }).addTo(map).bindTooltip(info.capital, { direction: "top" }).bindPopup(info.capital);
+    capitalMarker.bringToFront();
 
     // Το όνομα/πρωτεύουσα/πόλεις μπαίνουν ΠΑΝΩ-ΠΑΝΩ στο πλαϊνό πάνελ (πάνω από τη
     // λίστα των νομών), ώστε να φαίνονται αμέσως χωρίς να χρειάζεται scroll κάτω
