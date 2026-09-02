@@ -1335,6 +1335,44 @@ HOME_TEMPLATE = """
   <pre>{{ output }}</pre>
 </div>
 {% endif %}
+{% if oikismoi_moria %}
+<div class="card">
+  <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:4px;">
+    🏔️ Μόρια δυσπρόσιτων περιοχών (για μετάθεση μονίμων) — Νομός {{ oikismoi_moria.nomos }}
+  </div>
+  <div class="hint" style="margin-bottom:12px;">
+    Δεδομένα πρωτοβάθμιας εκπαίδευσης, ισχύουν από 1/9/2018. Δυσπρόσιτα θεωρούνται οι οικισμοί με 10, 11, 12
+    ή 14 μόρια (κατηγορίες Ι/ΙΑ/ΙΒ/ΙΓ). Αυτά τα μόρια αφορούν τη μετάθεση μονίμων εκπαιδευτικών — δεν έχουν
+    σχέση με τα μόρια πρόσληψης αναπληρωτών παραπάνω.
+  </div>
+  <div style="overflow-x:auto;">
+    <table style="width:100%; border-collapse:collapse; font-size:13px; white-space:nowrap;">
+      <tr style="border-bottom:2px solid var(--brass);">
+        <td style="padding:6px 10px 6px 0; font-weight:700; font-size:10.5px; text-transform:uppercase; color:var(--muted);">Δήμος</td>
+        <td style="padding:6px 10px; font-weight:700; font-size:10.5px; text-transform:uppercase; color:var(--muted);">Οικισμός</td>
+        <td style="padding:6px 10px; font-weight:700; font-size:10.5px; text-transform:uppercase; color:var(--muted); text-align:right;">Μόρια</td>
+        <td style="padding:6px 10px; font-weight:700; font-size:10.5px; text-transform:uppercase; color:var(--muted); text-align:right;">Δημοτικά</td>
+        <td style="padding:6px 10px; font-weight:700; font-size:10.5px; text-transform:uppercase; color:var(--muted); text-align:right;">Νηπιαγωγεία</td>
+        <td style="padding:6px 10px; font-weight:700; font-size:10.5px; text-transform:uppercase; color:var(--muted); text-align:right;">Km</td>
+        <td style="padding:6px 10px; font-weight:700; font-size:10.5px; text-transform:uppercase; color:var(--muted); text-align:right;">Κάτοικοι</td>
+        <td style="padding:6px 0 6px 10px; font-weight:700; font-size:10.5px; text-transform:uppercase; color:var(--muted); text-align:right;">Υψόμ.</td>
+      </tr>
+      {% for r in oikismoi_moria.rows %}
+      <tr style="border-bottom:1px solid var(--line);">
+        <td style="padding:6px 10px 6px 0; color:var(--muted-dark);">{{ r.δήμος }}</td>
+        <td style="padding:6px 10px; font-weight:600;">{{ r.οικισμός }}</td>
+        <td style="padding:6px 10px; text-align:right; font-weight:600; color:var(--brass-dark);">{{ r.μόρια }}</td>
+        <td style="padding:6px 10px; text-align:right;">{{ r.δημοτικά }}</td>
+        <td style="padding:6px 10px; text-align:right;">{{ r.νηπιαγωγεία }}</td>
+        <td style="padding:6px 10px; text-align:right;">{{ r.km if r.km is not none else '—' }}</td>
+        <td style="padding:6px 10px; text-align:right;">{{ '{:,}'.format(r.πληθυσμός).replace(',', '.') if r.πληθυσμός is not none else '—' }}</td>
+        <td style="padding:6px 0 6px 10px; text-align:right;">{{ r.υψόμετρο if r.υψόμετρο is not none else '—' }}μ</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endif %}
 """
 
 
@@ -1604,6 +1642,7 @@ def home():
     loc = _match_location(form["region"]) if form["region"] else None
     map_ctx = None
     paramethorios = None
+    oikismoi_moria = None
     if loc:
         map_ctx = {
             "nomos": loc["name"], "capital": loc["capital"], "kind": loc["kind"],
@@ -1613,6 +1652,15 @@ def home():
             "sch_url": _sch_embed_url(loc["lat"], loc["lng"]),
         }
         paramethorios = _check_paramethorios(loc.get("nomos_key"), loc.get("prefix"))
+        nomos_key = loc.get("nomos_key")
+        nomos_moria_data = _load_oikismoi_moria().get(nomos_key) if nomos_key else None
+        if nomos_moria_data and nomos_moria_data.get("δήμοι"):
+            rows = []
+            for dimos, oikismoi in nomos_moria_data["δήμοι"].items():
+                for o in oikismoi:
+                    rows.append({"δήμος": dimos, **o})
+            rows.sort(key=lambda r: r.get("μόρια") or 0, reverse=True)
+            oikismoi_moria = {"nomos": nomos_key.capitalize(), "rows": rows}
 
     return render_page(
         "home", "Γρήγορος έλεγχος", "Δώσε κλάδο, τοποθεσία-στόχο και τα μόριά σου — θα δεις πού θα έμπαινες φέτος.",
@@ -1626,6 +1674,7 @@ def home():
         mistho_klimakia=_load_mistho_klimakia(),
         epidomata=_load_epidomata(),
         paramethorios=paramethorios,
+        oikismoi_moria=oikismoi_moria,
         map_ctx=map_ctx,
     )
 
@@ -1956,13 +2005,6 @@ SCHOOLS_TEMPLATE = """
   </div>
 </div>
 
-<div id="perif-moria-card" class="card" style="display:none;">
-  <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:12px;">
-    🏔️ Μόρια δυσπρόσιτων στην περιφέρεια αυτή (δεδομένα πρωτοβάθμιας — ελλιπή, γεμίζουν σταδιακά)
-  </div>
-  <div id="perif-moria-body" style="display:flex; gap:20px; flex-wrap:wrap; font-size:13px;"></div>
-</div>
-
 <div id="nomos-info-card" class="card" style="display:none;">
   <div id="nomos-info-title" style="font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:17px; color:var(--ink); margin-bottom:8px;"></div>
   <div id="nomos-info-body" style="font-size:13.5px; line-height:1.6; color:var(--muted-dark);"></div>
@@ -1986,7 +2028,6 @@ SCHOOLS_TEMPLATE = """
 (function () {
   var NOMOS_INFO = {{ nomos_info_json|safe }};
   var NOMOS_CITIES = {{ nomos_cities_json|safe }};
-  var OIKISMOI_MORIA = {{ oikismoi_moria_json|safe }};
   var PALETTE = ["#B98A3D","#5C8AA6","#7A9B5C","#A65C7A","#8A6FB0","#C77B4E","#4E9B8F",
                  "#B0546F","#6F8FB0","#9B8A4E","#7A5C9B","#4E8F6B","#B06F4E"];
 
@@ -2105,48 +2146,6 @@ SCHOOLS_TEMPLATE = """
 
     infoCard.style.display = "none";
     schoolsCard.style.display = "none";
-    showPerifMoriaSummary(perifName, members);
-  }
-
-  // Ζητούμενο: για την επιλεγμένη περιφέρεια, βρες σε ΟΛΟΥΣ τους οικισμούς
-  // όλων των νομών της (από το OIKISMOI_MORIA, όσο έχει ήδη συμπληρωθεί) τον
-  // οικισμό με τα ΛΙΓΟΤΕΡΑ και τον οικισμό με τα ΠΕΡΙΣΣΟΤΕΡΑ μόρια δυσπρόσιτου.
-  function showPerifMoriaSummary(perifName, members) {
-    var card = document.getElementById("perif-moria-card");
-    var body = document.getElementById("perif-moria-body");
-    var rows = [];
-    members.forEach(function (f) {
-      var nomosKey = f.properties.name_greek.trim();
-      var nomosData = OIKISMOI_MORIA[nomosKey];
-      if (!nomosData || !nomosData.δήμοι) { return; }
-      Object.keys(nomosData.δήμοι).forEach(function (dimos) {
-        nomosData.δήμοι[dimos].forEach(function (oik) {
-          rows.push({ nomos: nomosKey, dimos: dimos, oik: oik });
-        });
-      });
-    });
-    if (!rows.length) {
-      card.style.display = "none";
-      return;
-    }
-    rows.sort(function (a, b) { return a.oik.μόρια - b.oik.μόρια; });
-    var least = rows[0];
-    var most = rows[rows.length - 1];
-
-    function renderRow(r, label, color) {
-      var o = r.oik;
-      return "<div style=\\"flex:1 1 260px;\\">"
-        + "<div style=\\"font-size:11px; font-weight:700; color:" + color + "; text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px;\\">" + label + "</div>"
-        + "<div style=\\"font-size:14px; font-weight:600; color:var(--ink); margin-bottom:2px;\\">" + o.οικισμός + " <span style=\\"font-weight:400; color:var(--muted-dark);\\">(" + titleCase(r.dimos) + ")</span></div>"
-        + "<div style=\\"color:var(--muted-dark); line-height:1.6;\\">"
-        + "Μόρια: <strong>" + o.μόρια + "</strong> · Δημοτικά: " + o.δημοτικά + " · Νηπιαγωγεία: " + o.νηπιαγωγεία
-        + "<br>Πληθυσμός: " + (o.πληθυσμός != null ? o.πληθυσμός.toLocaleString("el-GR") : "—")
-        + " · Υψόμετρο: " + (o.υψόμετρο != null ? o.υψόμετρο + "μ" : "—")
-        + "</div></div>";
-    }
-
-    body.innerHTML = renderRow(least, "📉 Λιγότερα μόρια", "#1F6B3A") + renderRow(most, "📈 Περισσότερα μόρια", "#B23A3A");
-    card.style.display = "block";
   }
 
   function selectNomos(name, colorOf) {
@@ -2218,7 +2217,6 @@ SCHOOLS_TEMPLATE = """
 def schools():
     nomos_info = _load_nomos_units_info()
     nomos_cities = _load_nomos_cities()
-    oikismoi_moria = _load_oikismoi_moria()
     return render_page(
         "schools", "Σχολεία",
         "Κάνε κλικ σε μια περιφέρεια, μετά σε έναν νομό, για να δεις την πρωτεύουσα, τις μεγάλες πόλεις, "
@@ -2226,7 +2224,6 @@ def schools():
         SCHOOLS_TEMPLATE,
         nomos_info_json=json.dumps(nomos_info, ensure_ascii=False),
         nomos_cities_json=json.dumps(nomos_cities, ensure_ascii=False),
-        oikismoi_moria_json=json.dumps(oikismoi_moria, ensure_ascii=False),
     )
 
 
