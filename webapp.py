@@ -344,6 +344,31 @@ def _load_nomos_cities() -> dict:
     return result
 
 
+_oikismoi_moria_cache = {"value": None, "ts": 0.0}
+
+
+def _load_oikismoi_moria() -> dict:
+    """Φορτώνει το data/oikismoi_moria.json (μόρια δυσπρόσιτων ανά οικισμό,
+    ομαδοποιημένα ανά νομό/δήμο), για τη σελίδα Σχολεία. Επεκτάσιμο σταδιακά
+    — η πηγή (malliaros.bplaced.net) φορτώνει δυναμικά με JavaScript, οπότε
+    τα δεδομένα προστίθενται χειροκίνητα, όπως τα υπόλοιπα αρχεία μας."""
+    now = time.monotonic()
+    if _oikismoi_moria_cache["value"] is not None and now - _oikismoi_moria_cache["ts"] < _CACHE_TTL:
+        return _oikismoi_moria_cache["value"]
+    result = {}
+    path = core.CFG.DATA_DIR / "oikismoi_moria.json"
+    if path.exists():
+        try:
+            import json
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            result = data.get("νομοί", {})
+        except Exception:                                            # noqa: BLE001
+            result = {}
+    _oikismoi_moria_cache["value"], _oikismoi_moria_cache["ts"] = result, now
+    return result
+
+
 _paramethorios_cache = {"value": None, "ts": 0.0}
 
 
@@ -1931,6 +1956,13 @@ SCHOOLS_TEMPLATE = """
   </div>
 </div>
 
+<div id="perif-moria-card" class="card" style="display:none;">
+  <div style="font-size:12.5px; font-weight:600; color:var(--muted-dark); margin-bottom:12px;">
+    🏔️ Μόρια δυσπρόσιτων στην περιφέρεια αυτή (δεδομένα πρωτοβάθμιας — ελλιπή, γεμίζουν σταδιακά)
+  </div>
+  <div id="perif-moria-body" style="display:flex; gap:20px; flex-wrap:wrap; font-size:13px;"></div>
+</div>
+
 <div id="nomos-info-card" class="card" style="display:none;">
   <div id="nomos-info-title" style="font-family:Georgia,'Iowan Old Style','Times New Roman',serif; font-size:17px; color:var(--ink); margin-bottom:8px;"></div>
   <div id="nomos-info-body" style="font-size:13.5px; line-height:1.6; color:var(--muted-dark);"></div>
@@ -1954,6 +1986,7 @@ SCHOOLS_TEMPLATE = """
 (function () {
   var NOMOS_INFO = {{ nomos_info_json|safe }};
   var NOMOS_CITIES = {{ nomos_cities_json|safe }};
+  var OIKISMOI_MORIA = {{ oikismoi_moria_json|safe }};
   var PALETTE = ["#B98A3D","#5C8AA6","#7A9B5C","#A65C7A","#8A6FB0","#C77B4E","#4E9B8F",
                  "#B0546F","#6F8FB0","#9B8A4E","#7A5C9B","#4E8F6B","#B06F4E"];
 
@@ -1999,6 +2032,7 @@ SCHOOLS_TEMPLATE = """
   function renderPerifereies() {
     infoCard.style.display = "none";
     schoolsCard.style.display = "none";
+    document.getElementById("perif-moria-card").style.display = "none";
     backBtn.style.display = "none";
     if (nomosLayer) { map.removeLayer(nomosLayer); nomosLayer = null; }
     if (perifLayer) { map.removeLayer(perifLayer); }
@@ -2071,6 +2105,48 @@ SCHOOLS_TEMPLATE = """
 
     infoCard.style.display = "none";
     schoolsCard.style.display = "none";
+    showPerifMoriaSummary(perifName, members);
+  }
+
+  // Ζητούμενο: για την επιλεγμένη περιφέρεια, βρες σε ΟΛΟΥΣ τους οικισμούς
+  // όλων των νομών της (από το OIKISMOI_MORIA, όσο έχει ήδη συμπληρωθεί) τον
+  // οικισμό με τα ΛΙΓΟΤΕΡΑ και τον οικισμό με τα ΠΕΡΙΣΣΟΤΕΡΑ μόρια δυσπρόσιτου.
+  function showPerifMoriaSummary(perifName, members) {
+    var card = document.getElementById("perif-moria-card");
+    var body = document.getElementById("perif-moria-body");
+    var rows = [];
+    members.forEach(function (f) {
+      var nomosKey = f.properties.name_greek.trim();
+      var nomosData = OIKISMOI_MORIA[nomosKey];
+      if (!nomosData || !nomosData.δήμοι) { return; }
+      Object.keys(nomosData.δήμοι).forEach(function (dimos) {
+        nomosData.δήμοι[dimos].forEach(function (oik) {
+          rows.push({ nomos: nomosKey, dimos: dimos, oik: oik });
+        });
+      });
+    });
+    if (!rows.length) {
+      card.style.display = "none";
+      return;
+    }
+    rows.sort(function (a, b) { return a.oik.μόρια - b.oik.μόρια; });
+    var least = rows[0];
+    var most = rows[rows.length - 1];
+
+    function renderRow(r, label, color) {
+      var o = r.oik;
+      return "<div style=\\"flex:1 1 260px;\\">"
+        + "<div style=\\"font-size:11px; font-weight:700; color:" + color + "; text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px;\\">" + label + "</div>"
+        + "<div style=\\"font-size:14px; font-weight:600; color:var(--ink); margin-bottom:2px;\\">" + o.οικισμός + " <span style=\\"font-weight:400; color:var(--muted-dark);\\">(" + titleCase(r.dimos) + ")</span></div>"
+        + "<div style=\\"color:var(--muted-dark); line-height:1.6;\\">"
+        + "Μόρια: <strong>" + o.μόρια + "</strong> · Δημοτικά: " + o.δημοτικά + " · Νηπιαγωγεία: " + o.νηπιαγωγεία
+        + "<br>Πληθυσμός: " + (o.πληθυσμός != null ? o.πληθυσμός.toLocaleString("el-GR") : "—")
+        + " · Υψόμετρο: " + (o.υψόμετρο != null ? o.υψόμετρο + "μ" : "—")
+        + "</div></div>";
+    }
+
+    body.innerHTML = renderRow(least, "📉 Λιγότερα μόρια", "#1F6B3A") + renderRow(most, "📈 Περισσότερα μόρια", "#B23A3A");
+    card.style.display = "block";
   }
 
   function selectNomos(name, colorOf) {
@@ -2090,9 +2166,15 @@ SCHOOLS_TEMPLATE = """
     var cities = NOMOS_CITIES[name];
 
     if (capitalMarker) { map.removeLayer(capitalMarker); }
-    capitalMarker = L.circleMarker([info.lat, info.lng], {
-      radius: 6, color: "#1D4ED8", weight: 2, fillColor: "#3B82F6", fillOpacity: 0.9,
-    }).addTo(map).bindTooltip(info.capital, { direction: "top" }).bindPopup(info.capital);
+    var pinIcon = L.divIcon({
+      className: "",
+      html: '<svg width="28" height="38" viewBox="0 0 28 38" xmlns="http://www.w3.org/2000/svg" style="display:block;">'
+        + '<path d="M14 0C6.3 0 0 6.3 0 14c0 10.5 14 24 14 24s14-13.5 14-24c0-7.7-6.3-14-14-14z" '
+        + 'fill="#1D4ED8" stroke="#fff" stroke-width="1.5"/><circle cx="14" cy="14" r="5.5" fill="#fff"/></svg>',
+      iconSize: [28, 38], iconAnchor: [14, 38], popupAnchor: [0, -34],
+    });
+    capitalMarker = L.marker([info.lat, info.lng], { icon: pinIcon })
+      .addTo(map).bindTooltip(info.capital, { direction: "top", offset: [0, -32] }).bindPopup(info.capital);
     capitalMarker.bringToFront();
 
     // Το όνομα/πρωτεύουσα/πόλεις μπαίνουν ΠΑΝΩ-ΠΑΝΩ στο πλαϊνό πάνελ (πάνω από τη
@@ -2136,6 +2218,7 @@ SCHOOLS_TEMPLATE = """
 def schools():
     nomos_info = _load_nomos_units_info()
     nomos_cities = _load_nomos_cities()
+    oikismoi_moria = _load_oikismoi_moria()
     return render_page(
         "schools", "Σχολεία",
         "Κάνε κλικ σε μια περιφέρεια, μετά σε έναν νομό, για να δεις την πρωτεύουσα, τις μεγάλες πόλεις, "
@@ -2143,6 +2226,7 @@ def schools():
         SCHOOLS_TEMPLATE,
         nomos_info_json=json.dumps(nomos_info, ensure_ascii=False),
         nomos_cities_json=json.dumps(nomos_cities, ensure_ascii=False),
+        oikismoi_moria_json=json.dumps(oikismoi_moria, ensure_ascii=False),
     )
 
 
